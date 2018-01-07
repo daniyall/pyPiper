@@ -1,9 +1,16 @@
 from distutils.core import setup
 
+try:
+    from pypandoc import convert
+    read_md = lambda f: convert(f, 'rst')
+except ImportError:
+    print("warning: pypandoc module not found, could not convert Markdown to RST")
+    read_md = lambda f: open(f, 'r').read()
+
 setup(
     name = 'pyPiper',
     packages = ['pyPiper'],
-    version = '0.2.0',
+    version = '0.2.1',
     description = 'A pipelining framework designed for data analysis but can be useful to other applications',
     author = 'daniyall',
     author_email = 'daniyal.l@outlook.com',
@@ -13,5 +20,5 @@ setup(
     classifiers = [],
     python_requires=">=3",
     license="LICENSE.txt",
-    long_description=open('README.md', 'rt').read()
+    long_description=read_md('README.md')
 )
