@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+from abc import ABC, abstractmethod
+
 class Pipeline():
     def __init__(self, start):
         if isinstance(start, Node):
@@ -49,7 +51,7 @@ class Pipeline():
     def __repr__(self):
         return self.__str__()
 
-class Node():
+class Node(ABC):
     BATCH_SIZE_ALL = -1
 
     batch_size = 1
@@ -150,8 +152,13 @@ class Node():
             to._step(next_buffer)
             next_buffer.clear()
 
-
     def emit(self, data):
+        """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
+        specified by the next node. If a terminal node emits data, it will be printed"""
+
+        if len(self.next) == 0:
+            print(data)
+
         for n in self.next:
             # if batch size is 1, don't bother saving to buffer
             if n.batch_size == 1:
@@ -163,7 +170,7 @@ class Node():
     def _step(self, data=None):
         self.pipeline.submit_task(node=self, data=data)
 
-
+    @abstractmethod
     def run(self, data):
         raise NotImplementedError("Child classes must override run method")
 
