@@ -24,5 +24,4 @@ class Square(Node):
 pipeline = Pipeline(Generate("gen", size=10) | Square("square"))
 print(pipeline)
 pipeline.run()
-
 ```
