@@ -1,4 +1,4 @@
-from pyPipelining import Node, Pipeline
+from pyPiper import Node, Pipeline
 
 class Generate(Node):
     def setup(self):

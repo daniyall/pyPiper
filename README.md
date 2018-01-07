@@ -5,7 +5,7 @@ Classes that extend ```Node``` must implement ```run``` method that will be call
 A simple example
 
 ```python
-from pyPipelining import Node, Pipeline
+from pyPiper import Node, Pipeline
 
 class Generate(Node):
     def setup(self):

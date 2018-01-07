@@ -1,0 +1,2 @@
+global-exclude example.py
+include LICENSE.txt
