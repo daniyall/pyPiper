@@ -1,9 +1,11 @@
 from collections import defaultdict
-
 from abc import ABC, abstractmethod
 
+import ctypes
+from multiprocessing import Pool, Manager
+
 class Pipeline():
-    def __init__(self, start):
+    def __init__(self, start, n_threads=1, quiet=False):
         if isinstance(start, Node):
             self.start = [start]
         elif type(start) == list:
@@ -11,9 +13,34 @@ class Pipeline():
         else:
             raise Exception("Start node is of wrong type")
 
+        self.quiet = quiet
+        self.n_threads = n_threads
+
         self._nodes = self.get_nodes(self.start)
+
         for node in self._nodes:
             node._set_pipeline(self)
+
+        if self.n_threads > 1:
+            manager = Manager()
+            self.queue = manager.Queue()
+
+            self.node_map = {}
+            for node in self._nodes:
+
+                shared_state = None
+                lock = None
+
+                if not node.stateless:
+                    node_state = node._get_state()
+                    running = manager.Value(ctypes.c_bool, True, lock=False)
+
+                    lock = manager.Lock()
+                    shared_state = manager.dict()
+                    for k, v in node_state.items():
+                        shared_state[k] = v
+
+                self.node_map[node.name] = [node, shared_state, running, lock]
 
         self.reset()
 
@@ -28,22 +55,94 @@ class Pipeline():
             res  += self.get_nodes(s.next)
         return res
 
-    def run(self):
+    def _generate_tasks(self):
+        def is_running(s):
+            if self.n_threads == 1:
+                return s.running
+            else:
+                return self.node_map[s.name][2].value
+
         while True:
             running = False
             for s in self.start:
-                if s.running:
+                if is_running(s):
                     s._step()
                     running = True
 
             if not running:
                 break
 
+        self._close()
+
+    def _close(self):
         self.running = False
+
+        if self.n_threads > 1:
+            for i in range(self.n_threads):
+                self.queue.put(None)
+
+    def _execute_tasks(self):
+        while True:
+            try:
+                item = self.queue.get(timeout=1)
+            except:
+                continue
+
+            if item is None:
+                return
+
+            node_name, data = item
+            node, state, running, lock = self.node_map[node_name]
+
+            if state is not None:
+                lock.acquire()
+
+            node._run(data, state)
+
+            if not node.running:
+                self.node_map[node_name][2].set(False)
+
+            if state is not None:
+                for k, v in node._get_state().items():
+                    state[k] = v
+
+                lock.release()
+
+    def run(self):
+        if self.n_threads == 1:
+            self._generate_tasks()
+        else:
+            pool = Pool(processes=self.n_threads)
+
+            def func(value):
+                print(type(value), value)
+                raise value
+                exit()
+
+            for i in range(self.n_threads):
+                pool.apply_async(self._execute_tasks, error_callback=func)
+
+            # self._close()
+            self._generate_tasks()
+
+            pool.close()
+            pool.join()
+
+            # processes = [Process(target=self._execute_tasks) for i in range(self.n_threads)]
+            # for p in processes:
+            #     p.start()
+            #
+            # self._generate_tasks()
+            # for p in processes:
+            #     p.join()
 
 
     def submit_task(self, node, data):
-        node.run(data=data)
+        if self.n_threads == 1:
+            node._run(data=data)
+        else:
+            self.queue.put((node.name, data))
+
 
     def __str__(self):
         return "\n".join([s.graph_to_str() for s in self.start])
@@ -51,20 +150,21 @@ class Pipeline():
     def __repr__(self):
         return self.__str__()
 
+_exclude_from_state = ["batch_size", "name", "next", "pipeline", "next_buffers", "stateless"]
+
 class Node(ABC):
     BATCH_SIZE_ALL = -1
 
-    batch_size = 1
-
     def __init__(self, name, **kwargs):
+        self.batch_size = 1
+        self.stateless = True
+
         for k, v in kwargs.items():
             setattr(self, k, v)
 
         self.name = name
 
-
         self.next = []
-        self._reset()
 
     def _reset(self):
         self.next_buffers = defaultdict(list)
@@ -154,9 +254,10 @@ class Node(ABC):
 
     def emit(self, data):
         """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
-        specified by the next node. If a terminal node emits data, it will be printed"""
+        specified by the next node. If a terminal node emits data and the pipeline is not set to quiet,
+        it will be printed"""
 
-        if len(self.next) == 0:
+        if len(self.next) == 0 and not self.pipeline.quiet:
             print(data)
 
         for n in self.next:
@@ -167,8 +268,25 @@ class Node(ABC):
                 self._push_buffer(n)
                 self._get_next_buffer(n).append(data)
 
+    def _get_state(self):
+        state = self.__dict__.copy()
+        for k in _exclude_from_state:
+            state.pop(k)
+        return state
+
+
     def _step(self, data=None):
         self.pipeline.submit_task(node=self, data=data)
+        # print("1", self._get_state())
+
+    def _run(self, data, state=None):
+        if state is not None:
+            for k, v in state.items():
+                setattr(self, k, v)
+
+        # print("2", self._get_state())
+        self.run(data)
+        # print("3", self._get_state())
 
     @abstractmethod
     def run(self, data):
@@ -180,20 +298,30 @@ if __name__ == '__main__':
         def setup(self):
             self.pos = 0
             self.reverse = False
+            self.stateless = False
 
         def run(self, data):
+            # print(self._get_state())
             if self.pos < self.size:
                 if self.reverse:
-                    self.emit(self.size - self.pos)
+                    res = self.size - self.pos
                 else:
-                    self.emit(self.pos)
-                self.pos = self.pos + 1
+                    res = self.pos
+                self.pos += 1
+
+                self.emit(res)
             else:
                 self.close()
+
 
     class Square(Node):
         def run(self, data):
             self.emit(data*data)
+
+    import time
+    class Sleep(Node):
+        def run(self, data):
+            time.sleep(5)
 
     class Half(Node):
         def run(self, data):
@@ -214,7 +342,8 @@ if __name__ == '__main__':
     pr = Print("print", batch_size=1)
     pr1 = Print("print all", batch_size=Node.BATCH_SIZE_ALL)
 
-    p = Pipeline(gen | [half, sq] | [pr, pr1])
+    # p = Pipeline(gen | [half, sq] | [pr, pr1])
+    p = Pipeline(gen | Sleep("sl"), n_threads=1)
     print(p)
 
     p.run()
