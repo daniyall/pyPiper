@@ -18,25 +18,29 @@ class Pipeline():
         self.n_threads = n_threads
 
 
+        for node in self._nodes:
+            node._set_pipeline(self)
+
         if self.n_threads > 1:
             manager = Manager()
             self.queue = manager.Queue()
-            self.lock = manager.Lock()
 
             self.node_map = {}
             for node in self._nodes:
-                node._set_pipeline(self)
 
                 shared_state = None
+                lock = None
+
                 if not node.stateless:
                     node_state = node._get_state()
                     running = manager.Value(ctypes.c_bool, True, lock=False)
 
+                    lock = manager.Lock()
                     shared_state = manager.dict()
                     for k, v in node_state.items():
                         shared_state[k] = v
 
-                self.node_map[node.name] = [node, shared_state, running]
+                self.node_map[node.name] = [node, shared_state, running, lock]
 
         self.reset()
 
@@ -88,10 +92,10 @@ class Pipeline():
                 return
 
             node_name, data = item
-            node, state, running = self.node_map[node_name]
+            node, state, running, lock = self.node_map[node_name]
 
             if state is not None:
-                self.lock.acquire()
+                lock.acquire()
 
             node._run(data, state)
 
@@ -102,7 +106,7 @@ class Pipeline():
                 for k, v in node._get_state().items():
                     state[k] = v
 
-                self.lock.release()
+                lock.release()
 
     def run(self):
         if self.n_threads == 1:
@@ -315,6 +319,11 @@ if __name__ == '__main__':
         def run(self, data):
             self.emit(data*data)
 
+    import time
+    class Sleep(Node):
+        def run(self, data):
+            time.sleep(5)
+
     class Half(Node):
         def run(self, data):
             self.emit(data/2.0)
@@ -327,7 +336,7 @@ if __name__ == '__main__':
         def run(self, data):
             print(data)
 
-    gen = Gen("gen", size=10000)
+    gen = Gen("gen", size=10)
     gen1 = Gen("gen1", size=10, reverse=True)
     sq = Square("sq")
     half = Half("half")
@@ -335,7 +344,7 @@ if __name__ == '__main__':
     pr1 = Print("print all", batch_size=Node.BATCH_SIZE_ALL)
 
     # p = Pipeline(gen | [half, sq] | [pr, pr1])
-    p = Pipeline(gen | sq, n_threads=4)
+    p = Pipeline(gen | Sleep("sl"), n_threads=1)
     print(p)
 
     p.run()
