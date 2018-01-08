@@ -16,7 +16,7 @@ class Square(Node):
         self.emit(data**2)
 
 
-pipeline = Pipeline(Generate("gen", size=10) | Square("square"))
+pipeline = Pipeline(Generate("gen", size=10) | Square("square"), quiet=True)
 print(pipeline)
 pipeline.run()
 

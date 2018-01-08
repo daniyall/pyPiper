@@ -5,7 +5,7 @@ import ctypes
 from multiprocessing import Pool, Manager
 
 class Pipeline():
-    def __init__(self, start, n_threads=1):
+    def __init__(self, start, n_threads=1, quiet=False):
         if isinstance(start, Node):
             self.start = [start]
         elif type(start) == list:
@@ -13,10 +13,10 @@ class Pipeline():
         else:
             raise Exception("Start node is of wrong type")
 
-        self._nodes = self.get_nodes(self.start)
-
+        self.quiet = quiet
         self.n_threads = n_threads
 
+        self._nodes = self.get_nodes(self.start)
 
         for node in self._nodes:
             node._set_pipeline(self)
@@ -165,7 +165,6 @@ class Node(ABC):
         self.name = name
 
         self.next = []
-        self._reset()
 
     def _reset(self):
         self.next_buffers = defaultdict(list)
@@ -255,11 +254,11 @@ class Node(ABC):
 
     def emit(self, data):
         """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
-        specified by the next node. If a terminal node emits data, it will be printed"""
+        specified by the next node. If a terminal node emits data and the pipeline is not set to quiet,
+        it will be printed"""
 
-        if len(self.next) == 0:
-            # print(data)
-            pass
+        if len(self.next) == 0 and not self.pipeline.quiet:
+            print(data)
 
         for n in self.next:
             # if batch size is 1, don't bother saving to buffer

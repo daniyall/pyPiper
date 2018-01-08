@@ -10,7 +10,7 @@ except ImportError:
 setup(
     name = 'pyPiper',
     packages = ['pyPiper'],
-    version = '0.2.1',
+    version = '0.2.3',
     description = 'A pipelining framework designed for data analysis but can be useful to other applications',
     author = 'daniyall',
     author_email = 'daniyal.l@outlook.com',
@@ -19,6 +19,6 @@ setup(
     keywords = ['data-science', 'pipelining', 'stream-processing', "data-analysis"],
     classifiers = [],
     python_requires=">=3",
-    license="LICENSE.txt",
+    license="LICENSE",
     long_description=read_md('README.md')
 )
