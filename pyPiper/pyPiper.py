@@ -17,6 +17,7 @@ class Pipeline():
 
         self.quiet = quiet
         self.n_threads = n_threads
+        self.proc_num = 0
 
         self._is_running = True
 
@@ -92,7 +93,9 @@ class Pipeline():
             for i in range(self.n_threads):
                 self.queue.put(None)
 
-    def _execute_tasks(self):
+    def _execute_tasks(self, proc_num):
+        self.proc_num = proc_num
+        
         while True:
             try:
                 item = self.queue.get()
@@ -109,7 +112,6 @@ class Pipeline():
 
                 if not self.node_map[node_name][2].value:
                     continue
-
 
                 node = self.node_map[node_name][0]
                 node.close()
@@ -143,7 +145,7 @@ class Pipeline():
                 exit()
 
             for i in range(self.n_threads):
-                pool.apply_async(self._execute_tasks, error_callback=func)
+                pool.apply_async(self._execute_tasks, (i+1,), error_callback=func)
 
             self._generate_tasks()
 
@@ -361,7 +363,7 @@ if __name__ == '__main__':
     pr1 = Print("print all", batch_size=Node.BATCH_SIZE_ALL)
 
     # p = Pipeline(gen | [half, sq] | [pr, pr1])
-    p = Pipeline(gen | Sleep("sl"), n_threads=1)
+    p = Pipeline(gen | sq, n_threads=2)
     print(p)
 
     p.run()
