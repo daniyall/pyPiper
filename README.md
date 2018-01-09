@@ -44,7 +44,7 @@ print(pipeline)
 pipeline.run()
 ```
 
-##Parallel Execution 
+## Parallel Execution 
 To process pipelines in parallel, pass `n_threads` > 1 when creating the pipeline.
 Parallel execution is done using `multiprocessing` and is well suited to CPU intensive tasks such as audio processing and feature extraction.
 For example:
