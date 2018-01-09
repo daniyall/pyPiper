@@ -30,10 +30,10 @@ class Pipeline():
 
                 shared_state = None
                 lock = None
+                running = manager.Value(ctypes.c_bool, True, lock=False)
 
                 if not node.stateless:
                     node_state = node._get_state()
-                    running = manager.Value(ctypes.c_bool, True, lock=False)
 
                     lock = manager.Lock()
                     shared_state = manager.dict()
