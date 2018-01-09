@@ -1,4 +1,4 @@
-A pipelining framework for Python. Developers can create nodes and chain them together to create pipelines. 
+A parallel pipelining framework for Python. Developers can create nodes and chain them together to create pipelines. 
 
 Classes that extend ```Node``` must implement ```run``` method that will be called whenever new data is available.  
 
@@ -43,3 +43,28 @@ pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print
 print(pipeline)
 pipeline.run()
 ```
+
+##Parallel Execution 
+To process pipelines in parallel, pass `n_threads` > 1 when creating the pipeline.
+Parallel execution is done using `multiprocessing` and is well suited to CPU intensive tasks such as audio processing and feature extraction.
+For example:
+
+```python
+class Generate(Node):
+    def setup(self):
+        self.pos = 0
+        self.stateless = False
+
+    def run(self, data):
+        if self.pos < self.size:
+            self.emit(self.pos)
+            self.pos = self.pos + 1
+        else:
+            self.close()
+
+pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
+print(pipeline)
+pipeline.run()
+```
+
+Note that since the generate Node needs to store state (`pos` variable), it must set `self.stateless = False`. This keeps the nodes state synchronized between different processes.
