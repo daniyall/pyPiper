@@ -22,9 +22,9 @@ class Double(Node):
         self.emit(data*2)
 
 
-# pipeline = Pipeline(Generate("gen", size=10) | Square("square"), quiet=True)
-# print(pipeline)
-# pipeline.run()
+pipeline = Pipeline(Generate("gen", size=10) | Square("square"), quiet=True)
+print(pipeline)
+pipeline.run()
 
 
 class Printer(Node):
@@ -34,10 +34,9 @@ class Printer(Node):
     def run(self, data):
         print(data)
 
-# pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
-# print(pipeline)
-# pipeline.run()
+pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
+print(pipeline)
+pipeline.run()
 
-p = Pipeline(Generate("g", size=10) | Square("s") | Double("d"), n_threads=2, quiet=False)
-# p = Pipeline(Generate("g", size=10) | [Square("s"), Double("d")] | Printer("p"), n_threads=2, quiet=False)
+p = Pipeline(Generate("g", size=10) | Square("s") | Double("d"), n_threads=4, quiet=False)
 p.run()

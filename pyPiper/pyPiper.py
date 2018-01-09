@@ -18,6 +18,7 @@ class Pipeline():
         self.quiet = quiet
         self.n_threads = n_threads
 
+        self._is_running = True
 
         for node in self._nodes:
             node._set_pipeline(self)
@@ -63,6 +64,15 @@ class Pipeline():
             else:
                 return self.node_map[s.name][2].value
 
+        def should_stop():
+            stopped_nodes = 0
+            for n in self._nodes:
+                if is_running(n):
+                    stopped_nodes += 1
+
+            non_start_nodes = len(self._nodes) - len(self.start)
+            return stopped_nodes != non_start_nodes
+
         while True:
             running = False
             for s in self.start:
@@ -70,7 +80,7 @@ class Pipeline():
                     s._step()
                     running = True
 
-            if not running:
+            if not should_stop():
                 break
 
         self._close()
@@ -85,29 +95,41 @@ class Pipeline():
     def _execute_tasks(self):
         while True:
             try:
-                item = self.queue.get(timeout=1)
+                item = self.queue.get()
             except:
                 continue
 
+            # None means processing is complete
             if item is None:
                 return
 
-            node_name, data = item
-            node, state, running, lock = self.node_map[node_name]
+            # Len 3 messages are close messages
+            if len(item) == 3:
+                node_name = item[0]
 
-            if state is not None:
-                lock.acquire()
+                if not self.node_map[node_name][2].value:
+                    continue
 
-            node._run(data, state)
 
-            if not node.running:
-                self.node_map[node_name][2].set(False)
+                node = self.node_map[node_name][0]
+                node.close()
+                if self.node_map[node_name][2].value:
+                    self.node_map[node_name][2].set(False)
 
-            if state is not None:
-                for k, v in node._get_state().items():
-                    state[k] = v
+            else:
+                node_name, data = item
+                node, state, running, lock = self.node_map[node_name]
 
-                lock.release()
+                if state is not None:
+                    lock.acquire()
+
+                node._run(data, state)
+
+                if state is not None:
+                    for k, v in node._get_state().items():
+                        state[k] = v
+
+                    lock.release()
 
     def run(self):
         if self.n_threads == 1:
@@ -128,7 +150,13 @@ class Pipeline():
             pool.close()
             pool.join()
 
-
+    def _send_closing(self, frm, to):
+        if self.n_threads == 1:
+            to.close()
+        else:
+            if self.node_map[to.name][2].value:
+                for i in range(self.n_threads):
+                    self.queue.put((to.name, "CLOSE", True)) # Put boolean to make close messages different from tasks
 
     def submit_task(self, node, data):
         if self.n_threads == 1:
@@ -232,7 +260,7 @@ class Node(ABC):
                 self._push_buffer(n, force=True)
 
         for n in self.next:
-            n.close()
+            self.pipeline._send_closing(self, n)
 
         self.running = False
 
@@ -249,8 +277,6 @@ class Node(ABC):
     def emit(self, data):
         """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
         specified by the next node. If a terminal node emits data, it will be printed"""
-
-        print("Emitting", self, data)
 
         if len(self.next) == 0 and not self.pipeline.quiet:
             print(data)
@@ -271,7 +297,6 @@ class Node(ABC):
 
 
     def _step(self, data=None):
-        print("Stepping", self, data, self.running)
         self.pipeline.submit_task(node=self, data=data)
 
     def _run(self, data, state=None):
