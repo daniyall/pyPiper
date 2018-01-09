@@ -13,10 +13,11 @@ class Pipeline():
         else:
             raise Exception("Start node is of wrong type")
 
+        self._nodes = self.get_nodes(self.start)
+
         self.quiet = quiet
         self.n_threads = n_threads
 
-        self._nodes = self.get_nodes(self.start)
 
         for node in self._nodes:
             node._set_pipeline(self)
@@ -122,19 +123,11 @@ class Pipeline():
             for i in range(self.n_threads):
                 pool.apply_async(self._execute_tasks, error_callback=func)
 
-            # self._close()
             self._generate_tasks()
 
             pool.close()
             pool.join()
 
-            # processes = [Process(target=self._execute_tasks) for i in range(self.n_threads)]
-            # for p in processes:
-            #     p.start()
-            #
-            # self._generate_tasks()
-            # for p in processes:
-            #     p.join()
 
 
     def submit_task(self, node, data):
@@ -165,6 +158,7 @@ class Node(ABC):
         self.name = name
 
         self.next = []
+        self._reset()
 
     def _reset(self):
         self.next_buffers = defaultdict(list)
@@ -254,8 +248,9 @@ class Node(ABC):
 
     def emit(self, data):
         """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
-        specified by the next node. If a terminal node emits data and the pipeline is not set to quiet,
-        it will be printed"""
+        specified by the next node. If a terminal node emits data, it will be printed"""
+
+        print("Emitting", self, data)
 
         if len(self.next) == 0 and not self.pipeline.quiet:
             print(data)
@@ -276,17 +271,15 @@ class Node(ABC):
 
 
     def _step(self, data=None):
+        print("Stepping", self, data, self.running)
         self.pipeline.submit_task(node=self, data=data)
-        # print("1", self._get_state())
 
     def _run(self, data, state=None):
         if state is not None:
             for k, v in state.items():
                 setattr(self, k, v)
 
-        # print("2", self._get_state())
         self.run(data)
-        # print("3", self._get_state())
 
     @abstractmethod
     def run(self, data):
