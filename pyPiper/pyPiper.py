@@ -1,5 +1,6 @@
 from collections import defaultdict
 from abc import ABC, abstractmethod
+import time
 
 import ctypes
 from multiprocessing import Pool, Manager
@@ -65,14 +66,12 @@ class Pipeline():
             else:
                 return self.node_map[s.name][2].value
 
-        def should_stop():
-            stopped_nodes = 0
+        def all_nodes_closed():
             for n in self._nodes:
                 if is_running(n):
-                    stopped_nodes += 1
+                    return False
 
-            non_start_nodes = len(self._nodes) - len(self.start)
-            return stopped_nodes != non_start_nodes
+            return True
 
         while True:
             running = False
@@ -81,8 +80,12 @@ class Pipeline():
                     s._step()
                     running = True
 
-            if not should_stop():
+            if not running:
                 break
+
+
+        while not all_nodes_closed():
+            time.sleep(0.1)
 
         self._close()
 
@@ -95,7 +98,7 @@ class Pipeline():
 
     def _execute_tasks(self, proc_num):
         self.proc_num = proc_num
-        
+
         while True:
             try:
                 item = self.queue.get()
@@ -152,10 +155,14 @@ class Pipeline():
             pool.close()
             pool.join()
 
+
     def _send_closing(self, frm, to):
         if self.n_threads == 1:
             to.close()
         else:
+            if frm in self.start:
+                self.node_map[frm.name][2].set(False)
+
             if self.node_map[to.name][2].value:
                 for i in range(self.n_threads):
                     self.queue.put((to.name, "CLOSE", True)) # Put boolean to make close messages different from tasks
@@ -338,7 +345,6 @@ if __name__ == '__main__':
         def run(self, data):
             self.emit(data*data)
 
-    import time
     class Sleep(Node):
         def run(self, data):
             time.sleep(5)
