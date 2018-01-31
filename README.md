@@ -2,7 +2,14 @@ A parallel pipelining framework for Python. Developers can create nodes and chai
 
 Classes that extend ```Node``` must implement ```run``` method that will be called whenever new data is available.  
 
-A simple example
+## Installation
+
+```bash
+pip install pypiper
+```
+
+
+## Example
 
 ```python
 from pyPiper import Node, Pipeline
