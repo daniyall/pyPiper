@@ -3,3 +3,5 @@
 *.pyc
 dist
 MANIFEST
+build
+*.log

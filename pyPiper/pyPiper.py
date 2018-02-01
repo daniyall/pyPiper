@@ -46,12 +46,7 @@ class Pipeline():
 
                 self.node_map[node.name] = [node, shared_state, running, lock]
 
-        self.reset()
-
-    def reset(self):
         self.running = True
-        for node in self._nodes:
-            node._reset()
 
     def get_nodes(self, start_set):
         res = start_set.copy()
@@ -145,7 +140,6 @@ class Pipeline():
             def func(value):
                 print(type(value), value)
                 raise value
-                exit()
 
             for i in range(self.n_threads):
                 pool.apply_async(self._execute_tasks, (i+1,), error_callback=func)
@@ -186,23 +180,28 @@ class Node(ABC):
     BATCH_SIZE_ALL = -1
 
     def __init__(self, name, **kwargs):
-        self.batch_size = 1
-        self.stateless = True
 
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+        override = {}
+        if "batch_size" in kwargs:
+            override["batch_size"] = kwargs.get("batch_size")
+            kwargs.pop("batch_size")
+        else:
+            self.batch_size = 1
+
+        self.stateless = True
 
         self.name = name
 
         self.next = []
-        self._reset()
-
-    def _reset(self):
         self.next_buffers = defaultdict(list)
         self.running = True
-        self.setup()
+        self.setup(**kwargs)
 
-    def setup(self):
+        for k in override:
+            self.__setattr__(k, override[k])
+
+
+    def setup(self, **kwargs):
         pass
 
     def __str__(self):
@@ -321,55 +320,16 @@ class Node(ABC):
 
 
 if __name__ == '__main__':
-    class Gen(Node):
-        def setup(self):
-            self.pos = 0
-            self.reverse = False
-            self.stateless = False
+    from example import *
 
-        def run(self, data):
-            # print(self._get_state())
-            if self.pos < self.size:
-                if self.reverse:
-                    res = self.size - self.pos
-                else:
-                    res = self.pos
-                self.pos += 1
-
-                self.emit(res)
-            else:
-                self.close()
-
-
-    class Square(Node):
-        def run(self, data):
-            self.emit(data*data)
-
-    class Sleep(Node):
-        def run(self, data):
-            time.sleep(5)
-
-    class Half(Node):
-        def run(self, data):
-            self.emit(data/2.0)
-
-    class Print(Node):
-        def setup(self):
-            pass
-            # self.batch_size = 2
-
-        def run(self, data):
-            print(data)
-
-    gen = Gen("gen", size=10)
-    gen1 = Gen("gen1", size=10, reverse=True)
+    gen = Generate("gen", size=10)
+    gen1 = Generate("gen1", size=10, reverse=True)
     sq = Square("sq")
     half = Half("half")
-    pr = Print("print", batch_size=1)
-    pr1 = Print("print all", batch_size=Node.BATCH_SIZE_ALL)
+    pr = Printer("print", batch_size=1)
+    pr1 = Printer("print all")
 
-    # p = Pipeline(gen | [half, sq] | [pr, pr1])
-    p = Pipeline(gen | sq, n_threads=2)
+    p = Pipeline(gen | sq | pr, n_threads=2)
     print(p)
 
     p.run()

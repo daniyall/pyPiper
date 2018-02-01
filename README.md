@@ -15,7 +15,8 @@ pip install pypiper
 from pyPiper import Node, Pipeline
 
 class Generate(Node):
-    def setup(self):
+    def setup(self, size):
+        self.size = size
         self.pos = 0
 
     def run(self, data):
@@ -58,7 +59,7 @@ For example:
 
 ```python
 class Generate(Node):
-    def setup(self):
+    def setup(self, size):
         self.pos = 0
         self.stateless = False
 
@@ -69,7 +70,7 @@ class Generate(Node):
         else:
             self.close()
 
-pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
+pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"), n_threads=2)
 print(pipeline)
 pipeline.run()
 ```
