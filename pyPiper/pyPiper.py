@@ -278,7 +278,7 @@ class Node(ABC):
     def _push_buffer(self, to, force=False):
         next_buffer = self._get_next_buffer(to)
 
-        if len(next_buffer) == to.batch_size or force:
+        if (len(next_buffer) >= to.batch_size and to.batch_size != Node.BATCH_SIZE_ALL) or force:
             to._step(next_buffer)
             next_buffer.clear()
 
@@ -311,6 +311,9 @@ class Node(ABC):
         if state is not None:
             for k, v in state.items():
                 setattr(self, k, v)
+
+        if not self.running:
+            return
 
         self.run(data)
 

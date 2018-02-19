@@ -11,7 +11,7 @@ class Generate(Node):
     def run(self, data):
         if self.pos < self.size:
             if self.reverse:
-                res = self.size - self.pos
+                res = self.size - self.pos - 1
             else:
                 res = self.pos
             self.pos += 1
@@ -38,6 +38,7 @@ class Half(Node):
 
 class Printer(Node):
     def setup(self):
+        self.stateless = False
         self.batch_size = Node.BATCH_SIZE_ALL
 
     def run(self, data):
@@ -55,3 +56,4 @@ if __name__ == '__main__':
     p3 = Pipeline(Generate("gen", size=10) | Square("square") | Double("double"), n_threads=4, quiet=False)
     print(p3)
     p3.run()
+
