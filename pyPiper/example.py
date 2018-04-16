@@ -45,15 +45,21 @@ class Printer(Node):
         print(data)
 
 if __name__ == '__main__':
-    p1 = Pipeline(Generate("gen", size=10) | Square("square"), quiet=False)
-    print(p1)
-    p1.run()
+    # p1 = Pipeline(Generate("gen", size=10) | Square("square"), quiet=False)
+    # print(p1)
+    # p1.run()
+    #
+    # p2 = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
+    # print(p2)
+    # p2.run()
+    #
+    # p3 = Pipeline(Generate("gen", size=10) | Square("square") | Double("double"), n_threads=4, quiet=False)
+    # print(p3)
+    # p3.run()
 
-    p2 = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
-    print(p2)
-    p2.run()
+    gen = Generate("gen", size=5)
+    double = Double("double")
+    printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
+    p = Pipeline(gen | double | printer, n_threads=4)
 
-    p3 = Pipeline(Generate("gen", size=10) | Square("square") | Double("double"), n_threads=4, quiet=False)
-    print(p3)
-    p3.run()
-
+    p.run()
