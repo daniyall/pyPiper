@@ -51,13 +51,13 @@ class Pipeline():
     def get_nodes(self, start_set):
         res = start_set.copy()
         for s in start_set:
-            res  += self.get_nodes(s.next)
+            res  += self.get_nodes(s._next)
         return res
 
     def _generate_tasks(self):
         def is_running(s):
             if self.n_threads == 1:
-                return s.running
+                return s._running
             else:
                 return self.node_map[s.name][2].value
 
@@ -179,8 +179,20 @@ _exclude_from_state = ["batch_size", "name", "next", "pipeline", "next_buffers",
 class Node(ABC):
     BATCH_SIZE_ALL = -1
 
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, in_streams="*", out_streams=list(), **kwargs):
+        """
 
+        :param name: Name of the node
+        :type name: str
+
+        :param in_name: Name of the input stream this node should expect. If "*" is given, all inputs are accepted
+        :type in_name: str or list of str
+
+        :param out_streams: Name of the output streams
+        :type out_streams: str or list of str
+
+        :param kwargs: Extra arguments, can be used to specify stateless. All other arguements are passed to setup
+        """
         override = {}
         if "batch_size" in kwargs:
             override["batch_size"] = kwargs.get("batch_size")
@@ -192,9 +204,26 @@ class Node(ABC):
 
         self.name = name
 
-        self.next = []
-        self.next_buffers = defaultdict(list)
-        self.running = True
+        if in_streams == "*":
+            self.in_streams = "*"
+        elif isinstance(in_streams, str):
+            self.in_streams = [in_streams]
+        elif isinstance(in_streams, list):
+            self.in_streams = in_streams
+        else:
+            raise Exception("in_names must be a string or list of strings")
+
+        if isinstance(out_streams, str):
+            self.out_streams = [out_streams]
+        elif isinstance(out_streams, list):
+            self.out_streams = out_streams
+        else:
+            raise Exception("out_names must be a string or list of strings")
+
+
+        self._next = []
+        self._next_buffers = defaultdict(list)
+        self._running = True
         self.setup(**kwargs)
 
         for k in override:
@@ -205,7 +234,7 @@ class Node(ABC):
         pass
 
     def __str__(self):
-        return 'N({})'.format(self.name)
+        return 'Node<%s ({%s} to {%s})>' % (self.name, ",".join(self.in_streams), ",".join(self.out_streams))
 
     def __repr__(self):
         return self.__str__()
@@ -220,26 +249,35 @@ class Node(ABC):
         return self.name < other.name
 
     def graph_to_str(self):
-        if len(self.next) == 1:
-            return "%s -> %s" %  (str(self), ", ".join([n.graph_to_str() for n in self.next]))
-        elif len(self.next) > 1:
-            return "%s -> [%s]" %  (str(self), ", ".join([n.graph_to_str() for n in self.next]))
+        if len(self._next) == 1:
+            return "%s -> %s" %  (str(self), ", ".join([n.graph_to_str() for n in self._next]))
+        elif len(self._next) > 1:
+            return "%s -> [%s]" %  (str(self), ", ".join([n.graph_to_str() for n in self._next]))
         else:
             return "%s" % str(self)
 
     def _add_next(self, n):
         # No next nodes have been added. Meaning n is immediately after self
-        if len(self.next) == 0:
+        if len(self._next) == 0:
             if isinstance(n, Node):
-                self.next.append(n)
-            elif isinstance(n, list):
-                for _n in n:
-                    if not isinstance(_n, Node):
-                        raise Exception("Can only have node types in pipeline")
-                    self.next.append(_n)
+                n = [n]
+
+            for _n in n:
+                if not isinstance(_n, Node):
+                    raise Exception("Can only have node types in pipeline")
+
+                if _n.in_streams == "*":
+                    if len(self.out_streams) == 0:
+                        print(self.out_streams)
+                        raise Exception("%s accepts all inputs but %s does not output anything" % (_n, self))
+                else:
+                    if not set(_n.in_streams).issubset(set(self.out_streams)):
+                        raise Exception("%s inputs should be a subset of %s outputs" % (_n, self))
+
+                self._next.append(_n)
 
         else:
-            for _n in self.next:
+            for _n in self._next:
                 _n._add_next(n)
 
 
@@ -263,17 +301,17 @@ class Node(ABC):
         self.pipeline = pipeline
 
     def close(self):
-        for n in self.next:
+        for n in self._next:
             if n.batch_size > 1 or n.batch_size == self.BATCH_SIZE_ALL:
                 self._push_buffer(n, force=True)
 
-        for n in self.next:
+        for n in self._next:
             self.pipeline._send_closing(self, n)
 
-        self.running = False
+        self._running = False
 
     def _get_next_buffer(self, to):
-        return self.next_buffers[str(to)]
+        return self._next_buffers[str(to)]
 
     def _push_buffer(self, to, force=False):
         next_buffer = self._get_next_buffer(to)
@@ -286,16 +324,30 @@ class Node(ABC):
         """Pushes emitted data to all next nodes. Data will be buffered if depending on the batch size
         specified by the next node. If a terminal node emits data, it will be printed"""
 
-        if len(self.next) == 0 and not self.pipeline.quiet:
+        if len(self._next) == 0 and not self.pipeline.quiet:
             print(data)
 
-        for n in self.next:
+        if not isinstance(data, list):
+            data = [data]
+
+        for n in self._next:
+            to_push = []
+            if n.in_streams == "*":
+                to_push = data
+            else:
+                for k in n.in_streams:
+                    to_push.append(data[self.out_streams.index(k)])
+
+
+            if len(to_push) == 1:
+                to_push = to_push[0]
+
             # if batch size is 1, don't bother saving to buffer
             if n.batch_size == 1:
-                n._step(data)
+                n._step(to_push)
             else:
                 self._push_buffer(n)
-                self._get_next_buffer(n).append(data)
+                self._get_next_buffer(n).append(to_push)
 
     def _get_state(self):
         state = self.__dict__.copy()
@@ -312,7 +364,7 @@ class Node(ABC):
             for k, v in state.items():
                 setattr(self, k, v)
 
-        if not self.running:
+        if not self._running:
             return
 
         self.run(data)
