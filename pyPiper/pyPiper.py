@@ -174,7 +174,7 @@ class Pipeline():
     def __repr__(self):
         return self.__str__()
 
-_exclude_from_state = ["batch_size", "name", "next", "pipeline", "next_buffers", "stateless"]
+_exclude_from_state = ["batch_size", "name", "_next", "pipeline", "_next_buffers", "stateless"]
 
 class Node(ABC):
     BATCH_SIZE_ALL = -1
