@@ -20,6 +20,25 @@ class Generate(Node):
         else:
             self.close()
 
+class EvenOddGenerate(Node):
+    def setup(self, size, reverse=False):
+        self.size = size
+        self.reverse = reverse
+        self.pos = 0
+        self.stateless = False
+
+    def run(self, data):
+        if self.pos < self.size:
+            if self.reverse:
+                res = self.size - self.pos - 1
+            else:
+                res = self.pos
+            self.pos += 2
+
+            self.emit([res, res+1])
+        else:
+            self.close()
+
 class Square(Node):
     def run(self, data):
         self.emit(data**2)
