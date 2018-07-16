@@ -179,7 +179,7 @@ _exclude_from_state = ["batch_size", "name", "next", "pipeline", "next_buffers",
 class Node(ABC):
     BATCH_SIZE_ALL = -1
 
-    def __init__(self, name, in_streams="*", out_streams=list(), **kwargs):
+    def __init__(self, name, in_streams="*", out_streams="*", **kwargs):
         """
 
         :param name: Name of the node
@@ -213,7 +213,9 @@ class Node(ABC):
         else:
             raise Exception("in_names must be a string or list of strings")
 
-        if isinstance(out_streams, str):
+        if out_streams == "*":
+            self.out_streams = "*"
+        elif isinstance(out_streams, str):
             self.out_streams = [out_streams]
         elif isinstance(out_streams, list):
             self.out_streams = out_streams
@@ -266,7 +268,9 @@ class Node(ABC):
                 if not isinstance(_n, Node):
                     raise Exception("Can only have node types in pipeline")
 
-                if _n.in_streams == "*":
+                if self.out_streams == "*":
+                    pass
+                elif _n.in_streams == "*":
                     if len(self.out_streams) == 0:
                         print(self.out_streams)
                         raise Exception("%s accepts all inputs but %s does not output anything" % (_n, self))
@@ -335,8 +339,13 @@ class Node(ABC):
             if n.in_streams == "*":
                 to_push = data
             else:
-                for k in n.in_streams:
-                    to_push.append(data[self.out_streams.index(k)])
+                if self.out_streams == "*":
+                    if len(data) != len(n.in_streams):
+                        raise Exception("Node %s emits %i items, but next node (%s) expects %i" % (self, len(data), n, len(n.in_streams)))
+                    to_push = data
+                else:
+                    for k in n.in_streams:
+                        to_push.append(data[self.out_streams.index(k)])
 
 
             if len(to_push) == 1:
