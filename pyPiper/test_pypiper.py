@@ -1,19 +1,26 @@
 import unittest
 import sys
 
-from pyPiper import NodeGraph, Node
+from pyPiper import NodeGraph, Node, Pipeline
+from example import Generate, Double, Square, Printer, Half, EvenOddGenerate
+
 
 def get_output():
     sys.stdout.flush()
     return sys.stdout.getvalue().strip().split("\n")
 
-n1 = Node("n1")
-n2 = Node("n2")
-n3 = Node("n3")
-n4 = Node("n4")
-n5 = Node("n5")
-n6 = Node("n6")
-n7 = Node("n7")
+class DummyNode(Node):
+    def run(self, data):
+        pass
+
+n1 = DummyNode("n1")
+n2 = DummyNode("n2")
+n3 = DummyNode("n3")
+n4 = DummyNode("n4")
+n5 = DummyNode("n5")
+n6 = DummyNode("n6")
+n7 = DummyNode("n7")
+
 
 class PyPiperTests(unittest.TestCase):
 
@@ -134,5 +141,72 @@ class PyPiperTests(unittest.TestCase):
 
         self.assertEquals(g, expected_g)
 
+    def test_double(self):
+        gen = Generate("gen", size=10)
+        double = Double("double")
+        p = Pipeline(gen | double)
+
+        p.run()
+        output = get_output()
+
+        expected_out = [str(x * 2) for x in range(10)]
+
+        self.assertCountEqual(output, expected_out)
+
+    def test_double_square(self):
+        gen = Generate("gen", size=10)
+        double = Double("double")
+        square = Square("square")
+        p = Pipeline(gen | double | square)
+
+        p.run()
+        output = get_output()
+
+        expected_out = [str((x * 2) ** 2) for x in range(10)]
+
+        self.assertCountEqual(output, expected_out)
+
+    def test_double_and_square(self):
+        gen = Generate("gen", size=10)
+        double = Double("double")
+        square = Square("square")
+        p = Pipeline(gen | [double, square])
+
+        p.run()
+        output = get_output()
+
+        expected_out = [str(x * 2) for x in range(10)] + [str(x ** 2) for x in range(10)]
+
+        self.assertCountEqual(output, expected_out)
+
+    def test_printer(self):
+        gen = Generate("gen", size=10)
+        printer = Printer("printer", batch_size=1)
+        p = Pipeline(gen | printer)
+
+        p.run()
+        output = get_output()
+
+        expected_out = [str(x) for x in range(10)]
+
+        self.assertCountEqual(output, expected_out)
+
+    def test_printer_batch(self):
+        gen = Generate("gen", size=10)
+        printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
+        p = Pipeline(gen | printer)
+
+        p.run()
+        output = get_output()
+
+        expected_out = [str([x for x in range(10)])]
+
+        self.assertCountEqual(output, expected_out)
+
 if __name__ == '__main__':
-    unittest.main(buffer=True)
+    # unittest.main(buffer=True)
+    gen = Generate("gen", size=10)
+    printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
+    p = Pipeline(gen | printer)
+
+    p.run()

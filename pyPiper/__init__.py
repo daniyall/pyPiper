@@ -1,1 +1,1 @@
-from pyPiper.pyPiper import Node, Pipeline
+from pyPiper.pyPiper import Node, NodeGraph, Pipeline
