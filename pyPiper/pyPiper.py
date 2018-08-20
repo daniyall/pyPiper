@@ -19,31 +19,29 @@ class Pipeline():
     def run(self):
         self._executor.run()
 
-def _filter_data_stream(node, next_node, data):
+def _filter_data_stream(node, next_node, parcels):
     to_push = []
-    if len(data) == 0:
-        return to_push
 
-    if next_node.in_streams == "*":
-        to_push = data
-    else:
-        if node.out_streams == "*":
-            if len(data) != len(next_node.in_streams):
-                raise Exception(
-                    "Node %s emits %i items, but next node (%s) expects %i" % (node, len(data), node, node.in_streams))
-            to_push = data
+    for parcel in parcels:
+        data = parcel.data
+
+        if next_node.in_streams == "*":
+            to_push.append(data)
         else:
-            for k in next_node.in_streams:
-                if isinstance(data[0], list):
-                    for d in data:
-                        to_push.append(d[node.out_streams.index(k)])
-                else:
+            if not isinstance(data, (list, tuple)):
+                data = [data]
+
+            if node.out_streams == "*":
+                if len(data) != len(next_node.in_streams):
+                    raise Exception(
+                        "Node %s emits %i items, but next node (%s) expects %i" % (node, len(data), node, node.in_streams))
+                to_push = data
+            else:
+                for k in next_node.in_streams:
                     to_push.append(data[node.out_streams.index(k)])
 
     if len(to_push) == 1:
         to_push = to_push[0]
-
-    # print(to_push, node.out_streams, next_node.in_streams)
 
     return to_push
 
@@ -83,10 +81,8 @@ class Executor():
 
     def print_buffer(self, buffer):
         if not self.quiet and buffer:
-            if len(buffer) == 1:
-                print(buffer[0])
-            else:
-                print(buffer)
+            for parcel in buffer:
+                print(parcel.data)
 
     @staticmethod
     def get_key(node, successor):
@@ -100,9 +96,9 @@ class Executor():
         else:
             root.close()
 
-        for d in root._output_buffer:
+        for parcel in root._output_buffer:
             for successor in self.graph._graph[root]:
-                self.send(root, successor, d)
+                self.send(root, successor, parcel)
         if len(self.graph._graph[root]) == 0:
             self.print_buffer(root._output_buffer)
         root._output_buffer.clear()
@@ -147,6 +143,16 @@ class ParallelExecutor():
     def run(self):
         raise NotImplementedError()
 
+
+class _Parcel(object):
+    def __init__(self, data):
+        self.data = data
+
+    def __str__(self):
+        return "Parcel<%s>" % str(self.data)
+
+    def __repr__(self):
+        return str(self)
 
 class Node(ABC):
     BATCH_SIZE_ALL = float("inf")
@@ -233,7 +239,7 @@ class Node(ABC):
             self._state = self.STATE_CLOSED
 
     def emit(self, data):
-        self._output_buffer.append(data)
+        self._output_buffer.append(_Parcel(data))
 
     def _run(self, data):
         if self._state != self.STATE_CLOSED:

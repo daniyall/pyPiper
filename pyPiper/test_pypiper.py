@@ -389,15 +389,11 @@ class PyPiperTests(unittest.TestCase):
         self.assertCountEqual(output, expected_out)
 
 if __name__ == '__main__':
-    # unittest.main(buffer=True)
+    unittest.main(buffer=True)
 
-    gen = EvenOddGenerate("gen", size=20, out_streams=["even", "odd"])
-    double = Double("double", out_streams="num", in_streams="even")
-    square = Square("square", out_streams="num", in_streams="odd")
-
-    printer1 = Printer("p1", in_streams="num", batch_size=Node.BATCH_SIZE_ALL)
-    printer2 = Printer("p2", in_streams="num", batch_size=Node.BATCH_SIZE_ALL)
-
-    p = Pipeline(gen | [double | printer1, square | printer2], quiet=False)
-
-    p.run()
+    # gen = Generate("gen", size=10, out_streams="num")
+    # double = Double("double", out_streams="num", in_streams="num")
+    # square = Square("square", out_streams="num", in_streams="num")
+    # p = Pipeline(gen | [double, square])
+    #
+    # p.run()
