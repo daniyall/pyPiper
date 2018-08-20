@@ -6,6 +6,10 @@ from multiprocessing import Pool, Manager, Queue
 from multiprocessing.pool import ApplyResult
 from queue import Empty
 
+STATE_RUNNING = 1
+STATE_CLOSING = 2
+STATE_CLOSED = 3
+
 def _filter_data_stream(node, next_node, parcels):
     to_push = []
 
@@ -73,7 +77,8 @@ class BaseExecutor(ABC):
 class Executor(BaseExecutor):
     def __init__(self, graph, quiet=False, update_callback=None):
         super().__init__(graph, quiet, update_callback)
-
+        self.run_count = 0
+        self.tmp=""
         self.queues = {}
         for node in graph._node_list:
             for successor in graph._graph[node]:
@@ -114,6 +119,7 @@ class Executor(BaseExecutor):
 
 
     def _step(self):
+        self.run_count += 1
         for node in self.graph:
             node.state_transition()
             successors = self.graph._graph[node]
@@ -145,16 +151,22 @@ class ParallelExecutor(BaseExecutor):
 
         self.n_threads = n_threads
         self.pool = Pool(processes=n_threads)
+        self.manager = Manager()
 
         root = self.graph._root
         self.queues = []
-        self.executors = []
+        self.executors = list(range(n_threads))
 
-        self.results = [None for i in range(n_threads)]
+        self.results = [False for i in range(n_threads)]
+        self.finished = [False for i in range(n_threads)]
+
+        self.iters_without_wait = [0 for x in range(n_threads)]
+
+        self.MAX_ITERS_WITHOUT_WAIT = 1000
 
         for i in range(n_threads):
             self.queues.append({})
-            self.executors.append(Executor(graph, quiet))
+            self.executors[i] = SingleExecRunner(Executor(graph, quiet))
 
             for successor in self.graph._graph[root]:
                 self.queues[i][self.get_key(root, successor)] = deque()
@@ -181,45 +193,62 @@ class ParallelExecutor(BaseExecutor):
         root._output_buffer.clear()
 
     def is_finished(self):
-        return reduce(lambda x,y: x and y, [x.is_finished() for x in self.executors])
+        all_finished = reduce(lambda x,y: x and y, self.finished)
+
+        return all_finished
 
     def _step(self):
+        root = self.graph._root
+
         for i in range(self.n_threads):
+
             if isinstance(self.results[i], ApplyResult):
                 if self.results[i].ready():
-                    self.executors[i].graph = self.results[i].get()
+                    self.finished[i] = self.finished[i] | self.results[i].get()
+                    self.iters_without_wait[i] = 0
                 else:
-                    continue
-
-            # print([(i, node, node._state) for node in self.executors[i].graph._node_list])
-
-            root = self.executors[i].graph._root
-            self.executors[i].graph._root._state = self.graph._root._state
+                    self.iters_without_wait[i] += 1
+                    if self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
+                        self.finished[i] = self.finished[i] | self.results[i].get()
 
             queues = self.queues[i]
             args = []
-            for q_key in queues:
-                q = queues[q_key]
+            for q in queues.values():
                 for successor in self.graph._graph[root]:
                     if len(q) > 0:
                         parcel = q.popleft()
                         args.append((root, successor, parcel))
 
-            r = self.pool.apply_async(_single_step, (self.executors[i], args), error_callback=error_func)
-            self.results[i] = r
+            res = self.pool.apply_async(self.executors[i].step, (root._state, args), error_callback=error_func)
+            self.results[i] = res
+
+        # print(msg)
 
     def run(self):
         super().run()
+
         self.pool.close()
         self.pool.join()
 
-def _single_step(executor, args):
-    for root, successor, parcel in args:
-        executor.send(root, successor, parcel)
+import os
 
-    executor._step()
+class SingleExecRunner(object):
+    def __init__(self, executor):
+        self.executor = executor
 
-    return executor.graph
+    def step(self, root_state, args):
+        for root, successor, parcel in args:
+            self.executor.send(root, successor, parcel)
+
+        self.executor._step()
+
+        if root_state == STATE_CLOSING:
+            self.executor.graph._root._state = STATE_CLOSING
+
+        return self.executor.is_finished()
+
+    def is_finished(self):
+        return self.executor.is_finished()
 
 def error_func(value):
     print(type(value), value)

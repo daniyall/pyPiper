@@ -46,8 +46,6 @@ class Square(Node):
 
 class Double(Node):
     def run(self, data):
-        import time
-        time.sleep(0.5)
         self.emit(data*2)
 
 class Sleep(Node):
@@ -78,13 +76,13 @@ def tmp(delta, total):
     print(delta, total)
 
 if __name__ == '__main__':
-    gen = Generate("gen", size=20)
+    gen = Generate("gen", size=16)
     double = Double("double")
     printer = Printer("printer", batch_size=1)
 
-    p = Pipeline(gen | double | printer, n_threads=4)
-    p.run()
+    # p = Pipeline(gen | double | printer, n_threads=1)
+    # p.run()
 
     # with TqdmUpdate(desc="Progress") as pbar:
-    # p = Pipeline(gen | double | printer, n_threads=4)
-    # p.run()
+    p = Pipeline(gen | double | printer, n_threads=4)
+    p.run()
