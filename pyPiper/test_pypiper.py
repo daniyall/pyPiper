@@ -204,9 +204,4 @@ class PyPiperTests(unittest.TestCase):
         self.assertCountEqual(output, expected_out)
 
 if __name__ == '__main__':
-    # unittest.main(buffer=True)
-    gen = Generate("gen", size=10)
-    printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
-    p = Pipeline(gen | printer)
-
-    p.run()
+    unittest.main(buffer=True)

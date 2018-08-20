@@ -10,17 +10,17 @@ class Pipeline():
         self.graph = graph
 
         if n_threads == 1:
-            self._executor = Executor(quiet)
+            self._executor = Executor(self.graph, quiet)
         elif n_threads > 1:
             self._executor = ParallelExecutor(quiet)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
     def run(self):
-        self._executor.run(self.graph)
+        self._executor.run()
 
 
-def _get_push_data(node, next_node, data):
+def _filter_data_stream(node, next_node, data):
     to_push = []
     if next_node.in_streams == "*":
         to_push = data
@@ -48,68 +48,85 @@ def is_all_closed(graph):
 
 
 class Executor():
-    def __init__(self, quiet=False, input_queue=deque()):
-        self.input_queue = input_queue
+    def __init__(self, graph, quiet=False):
+        self.graph = graph
         self.quiet = quiet
 
+        self.queues = {}
+        for node in graph._node_list:
+            for successor in graph._graph[node]:
+                self.queues[self.get_key(node, successor)] = deque()
 
-    def _run_root(self, root):
-        root._run(None)
-        print(root._output_buffer)
+    def send(self, node, successor, data):
+        self.queues[self.get_key(node, successor)].append(data)
 
-        if len(root._output_buffer) >= root.batch_size:
-            print(len(root._output_buffer), root.batch_size, Node.BATCH_SIZE_ALL)
-            self.input_queue.append(root._output_buffer.copy())
-            root._output_buffer = []
+    def get_data_to_push(self, node, successor):
+        queue = self.queues[self.get_key(node, successor)]
 
+        if node._state != Node.STATE_CLOSED:
+            size = successor.batch_size
+        else:
+            size = len(queue)
 
-    def _step(self, graph):
-        root = graph._root
+        if len(queue) >= size:
+            return [queue.popleft() for x in range(size)]
 
-        if len(self.input_queue) > 0:
-            data = self.input_queue.popleft()
+        return None
 
-            nodes_to_traverse = [(root, n, data) for n in graph._graph[root]]
+    def print_buffer(self, buffer):
+        if not self.quiet and buffer:
+            if len(buffer) == 1:
+                print(buffer[0])
+            else:
+                print(buffer)
 
-            while len(nodes_to_traverse) > 0:
-                src_node, node, data = nodes_to_traverse.pop()
+    @staticmethod
+    def get_key(node, successor):
+        return "%s%s" % (node, successor)
 
-                # TODO: Switch to input buffers so that batch size specified by the dest node is used.
+    def _run_root(self):
+        root = self.graph._root
 
-                incoming_data = _get_push_data(src_node, node, data)
+        if root._state == Node.STATE_RUNNING:
+            root._run(None)
+        else:
+            root.close()
 
-                node.run(incoming_data)
-
-                if len(node._output_buffer) >= node.batch_size or node._state == Node.STATE_CLOSING:
-                    outgoing_data = node._output_buffer.copy()
-                    if len(outgoing_data) == 1:
-                        outgoing_data = outgoing_data[0]
-
-                    if len(graph._graph[node]) == 0 and not self.quiet:
-                        print(outgoing_data)
-
-                    nodes_to_traverse.extend([(node, x, outgoing_data) for x in graph._graph[node]])
-                    node._output_buffer = []
-
-
-        nodes_to_traverse = [root]
-        while len(nodes_to_traverse) > 0:
-            node = nodes_to_traverse.pop()
-
-            nodes_to_traverse.extend(graph._graph[node])
-
-            if node._state == Node.STATE_CLOSING:
-                for n in graph._graph[node]:
-                    n.close()
-                node._state = Node.STATE_CLOSED
+        for d in root._output_buffer:
+            for successor in self.graph._graph[root]:
+                self.send(root, successor, d)
+        root._output_buffer.clear()
 
 
-    def run(self, graph):
-        root = graph._root
+    def _step(self):
+        for node in self.graph:
+            successors = self.graph._graph[node]
 
-        while not is_all_closed(graph):
-            self._run_root(root)
-            self._step(graph)
+            for successor in successors:
+                data = self.get_data_to_push(node, successor)
+
+                if data:
+                    data = _filter_data_stream(node, successor, data)
+                    successor._run(data)
+
+                for d in successor._output_buffer:
+                    super_successors = self.graph._graph[successor]
+                    for ss in super_successors:
+                        self.send(successor, ss, d)
+
+                    if len(super_successors) == 0:
+                        self.print_buffer(successor._output_buffer)
+                    successor._output_buffer.clear()
+
+
+                if node._state != Node.STATE_RUNNING:
+                    successor.close()
+
+
+    def run(self):
+        while not is_all_closed(self.graph):
+            self._run_root()
+            self._step()
 
 
 class ParallelExecutor():
@@ -173,7 +190,6 @@ class Node(ABC):
         for k in override:
             self.__setattr__(k, override[k])
 
-        print("END CONS", self, self.batch_size)
         assert self.batch_size > 0
 
 
@@ -201,7 +217,10 @@ class Node(ABC):
         pass
 
     def close(self):
-        self._state = self.STATE_CLOSING
+        if self._state == self.STATE_RUNNING:
+            self._state = self.STATE_CLOSING
+        elif self._state == self.STATE_CLOSING:
+            self._state = self.STATE_CLOSED
 
     def emit(self, data):
         if not isinstance(data, list):
@@ -210,7 +229,7 @@ class Node(ABC):
         self._output_buffer.extend(data)
 
     def _run(self, data):
-        if self._state == self.STATE_RUNNING:
+        if self._state != self.STATE_CLOSED:
             self.run(data)
 
     @abstractmethod
@@ -268,15 +287,10 @@ class NodeGraph(object):
             raise Exception("Nodes must be a node or list/tuple or nodes. Got %s" % type(successors))
 
     def __str__(self):
-        to_print = [self._root]
-
         result = "Graph<\n"
-        while len(to_print) > 0:
-            n = to_print.pop()
+        for n in self:
             if len(self._graph[n]) > 0:
                 result += "\t%s -> [%s]\n" %(n, ",".join([str(x) for x in self._graph[n]]))
-
-            to_print.extend(self._graph[n])
 
         result += ">"
         return result
@@ -300,15 +314,27 @@ class NodeGraph(object):
     def __hash__(self):
         return hash(json.dumps(self._graph, sort_keys=True))
 
+    def __iter__(self):
+        to_iter = [self._root]
+        while to_iter:
+            to_yield = to_iter.pop()
+            to_iter.extend(self._graph[to_yield])
+            yield to_yield
+
+
 
 if __name__ == '__main__':
-    n1 = Node("N1")
-    n2 = Node("N2")
-    n3 = Node("N3")
-    n4 = Node("N4")
-    n5 = Node("N5")
-    n6 = Node("N6")
-    n7 = Node("N7")
+    class DummyNode(Node):
+        def run(self, data):
+            pass
+
+    n1 = DummyNode("N1")
+    n2 = DummyNode("N2")
+    n3 = DummyNode("N3")
+    n4 = DummyNode("N4")
+    n5 = DummyNode("N5")
+    n6 = DummyNode("N6")
+    n7 = DummyNode("N7")
 
     # g1 = NodeGraph(n1)
     # g1.add(n1, n2)
