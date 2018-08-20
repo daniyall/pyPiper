@@ -44,10 +44,8 @@ class Square(Node):
     def run(self, data):
         self.emit(data**2)
 
-import time
 class Double(Node):
     def run(self, data):
-        time.sleep(1)
         self.emit(data*2)
 
 class Sleep(Node):
