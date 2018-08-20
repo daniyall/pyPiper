@@ -46,6 +46,8 @@ class Square(Node):
 
 class Double(Node):
     def run(self, data):
+        import time
+        time.sleep(0.5)
         self.emit(data*2)
 
 class Sleep(Node):
@@ -65,17 +67,24 @@ class Printer(Node):
         print(data)
 
 
-class TqdmUpTo(tqdm):
-    def update_to(self, delta=1, total_size=None):
+class TqdmUpdate(tqdm):
+    def update(self, delta=1, total_size=None):
         if total_size is not None:
             self.total = total_size
-        self.update(delta)
+        super().update(delta)
 
+
+def tmp(delta, total):
+    print(delta, total)
 
 if __name__ == '__main__':
-    gen = Generate("gen", size=50)
+    gen = Generate("gen", size=20)
     double = Double("double")
-    printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
-    with TqdmUpTo(desc="Progress") as pbar:
-        p = Pipeline(gen | double | printer, n_threads=1, update_callback=pbar.update_to)
-        p.run()
+    printer = Printer("printer", batch_size=1)
+
+    p = Pipeline(gen | double | printer, n_threads=4)
+    p.run()
+
+    # with TqdmUpdate(desc="Progress") as pbar:
+    # p = Pipeline(gen | double | printer, n_threads=4)
+    # p.run()

@@ -15,7 +15,7 @@ class Pipeline():
         if n_threads == 1:
             self._executor = Executor(graph, quiet, update_callback)
         elif n_threads > 1:
-            self._executor = ParallelExecutor(graph, quiet, update_callback)
+            self._executor = ParallelExecutor(graph, n_threads, quiet, update_callback)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
@@ -113,11 +113,12 @@ class Node(ABC):
     def setup(self, **kwargs):
         pass
 
-    def close(self):
-        if self._state == self.STATE_RUNNING:
-            self._state = self.STATE_CLOSING
-        elif self._state == self.STATE_CLOSING:
+    def state_transition(self):
+        if self._state == self.STATE_CLOSING:
             self._state = self.STATE_CLOSED
+
+    def close(self):
+        self._state = self.STATE_CLOSING
 
     def emit(self, data):
         self._output_buffer.append(_Parcel(data))
