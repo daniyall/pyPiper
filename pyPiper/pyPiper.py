@@ -19,9 +19,11 @@ class Pipeline():
     def run(self):
         self._executor.run()
 
-
 def _filter_data_stream(node, next_node, data):
     to_push = []
+    if len(data) == 0:
+        return to_push
+
     if next_node.in_streams == "*":
         to_push = data
     else:
@@ -31,11 +33,17 @@ def _filter_data_stream(node, next_node, data):
                     "Node %s emits %i items, but next node (%s) expects %i" % (node, len(data), node, node.in_streams))
             to_push = data
         else:
-            for k in node.in_streams:
-                to_push.append(data[node.out_streams.index(k)])
+            for k in next_node.in_streams:
+                if isinstance(data[0], list):
+                    for d in data:
+                        to_push.append(d[node.out_streams.index(k)])
+                else:
+                    to_push.append(data[node.out_streams.index(k)])
 
-    if isinstance(to_push, list) and len(to_push) == 1:
+    if len(to_push) == 1:
         to_push = to_push[0]
+
+    # print(to_push, node.out_streams, next_node.in_streams)
 
     return to_push
 
@@ -95,6 +103,8 @@ class Executor():
         for d in root._output_buffer:
             for successor in self.graph._graph[root]:
                 self.send(root, successor, d)
+        if len(self.graph._graph[root]) == 0:
+            self.print_buffer(root._output_buffer)
         root._output_buffer.clear()
 
 
@@ -130,10 +140,11 @@ class Executor():
 
 
 class ParallelExecutor():
-    def __init__(self, quiet):
+    def __init__(self, graph, quiet=False):
+        self.graph = graph
         self.quiet = quiet
 
-    def run(self, graph):
+    def run(self):
         raise NotImplementedError()
 
 
@@ -201,8 +212,7 @@ class Node(ABC):
 
     def __or__(self, other):
         g = NodeGraph(self)
-        g.add(self, other)
-        return g
+        return g | other
 
     def __eq__(self, other):
         if not isinstance(other, Node):
@@ -223,10 +233,7 @@ class Node(ABC):
             self._state = self.STATE_CLOSED
 
     def emit(self, data):
-        if not isinstance(data, list):
-            data = [data]
-
-        self._output_buffer.extend(data)
+        self._output_buffer.append(data)
 
     def _run(self, data):
         if self._state != self.STATE_CLOSED:
@@ -253,6 +260,15 @@ class NodeGraph(object):
 
         if successor in self._node_list:
             raise Exception("Cannot two instances of a node to the graph. \n%s\n%s being added twice" % (self, successor))
+
+        if predecessor.out_streams == "*":
+            pass
+        elif successor.in_streams == "*":
+            if len(predecessor.out_streams) == 0:
+                raise Exception("%s accepts all inputs but %s does not output anything" % (successor, predecessor))
+        else:
+            if not set(successor.in_streams).issubset(set(predecessor.out_streams)):
+                raise Exception("%s inputs should be a subset of %s outputs" % (successor, predecessor))
 
         self._graph[predecessor].add(successor)
         self._graph[successor] = set()
