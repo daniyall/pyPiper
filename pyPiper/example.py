@@ -1,5 +1,6 @@
 from pyPiper import Node, Pipeline
 import time
+from tqdm import tqdm
 
 class Generate(Node):
     def setup(self, size, reverse=False):
@@ -43,8 +44,10 @@ class Square(Node):
     def run(self, data):
         self.emit(data**2)
 
+import time
 class Double(Node):
     def run(self, data):
+        time.sleep(1)
         self.emit(data*2)
 
 class Sleep(Node):
@@ -63,22 +66,18 @@ class Printer(Node):
     def run(self, data):
         print(data)
 
-if __name__ == '__main__':
-    # p1 = Pipeline(Generate("gen", size=10) | Square("square"), quiet=False)
-    # print(p1)
-    # p1.run()
-    #
-    # p2 = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
-    # print(p2)
-    # p2.run()
-    #
-    # p3 = Pipeline(Generate("gen", size=10) | Square("square") | Double("double"), n_threads=4, quiet=False)
-    # print(p3)
-    # p3.run()
 
-    gen = Generate("gen", size=5)
+class TqdmUpTo(tqdm):
+    def update_to(self, delta=1, total_size=None):
+        if total_size is not None:
+            self.total = total_size
+        self.update(delta)
+
+
+if __name__ == '__main__':
+    gen = Generate("gen", size=50)
     double = Double("double")
     printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
-    p = Pipeline(gen | double | printer, n_threads=4)
-
-    p.run()
+    with TqdmUpTo(desc="Progress") as pbar:
+        p = Pipeline(gen | double | printer, n_threads=1, update_callback=pbar.update_to)
+        p.run()

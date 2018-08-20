@@ -3,16 +3,17 @@ import json
 from collections import defaultdict, deque
 
 class Pipeline():
-    def __init__(self, graph, n_threads=1, quiet=False):
+    def __init__(self, graph, n_threads=1, quiet=False, update_callback=None):
         if not isinstance(graph, NodeGraph):
             raise Exception("Graph must be a node graph. Got %s" % type(graph))
 
         self.graph = graph
+        self.update_callback = update_callback
 
         if n_threads == 1:
-            self._executor = Executor(self.graph, quiet)
+            self._executor = Executor(graph, quiet, update_callback)
         elif n_threads > 1:
-            self._executor = ParallelExecutor(quiet)
+            self._executor = ParallelExecutor(graph, quiet, update_callback)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
@@ -54,9 +55,11 @@ def is_all_closed(graph):
 
 
 class Executor():
-    def __init__(self, graph, quiet=False):
+    def __init__(self, graph, quiet=False, update_callback=None):
         self.graph = graph
         self.quiet = quiet
+        self.update_callback = update_callback
+        self.use_callback = False
 
         self.queues = {}
         for node in graph._node_list:
@@ -93,6 +96,9 @@ class Executor():
 
         if root._state == Node.STATE_RUNNING:
             root._run(None)
+            if self.use_callback:
+                self.update_callback(1, self.total_size)
+
         else:
             root.close()
 
@@ -130,15 +136,20 @@ class Executor():
 
 
     def run(self):
+        if self.update_callback is not None and self.graph._root.size is not None:
+            self.use_callback = True
+            self.total_size = self.graph._root.size
+
         while not is_all_closed(self.graph):
             self._run_root()
             self._step()
 
 
 class ParallelExecutor():
-    def __init__(self, graph, quiet=False):
+    def __init__(self, graph, quiet=False, p_bar=None):
         self.graph = graph
         self.quiet = quiet
+        self.p_bar = p_bar
 
     def run(self):
         raise NotImplementedError()
@@ -180,6 +191,8 @@ class Node(ABC):
             self.batch_size = 1
 
         self.name = name
+
+        self.size = None
 
         if in_streams == "*":
             self.in_streams = "*"
