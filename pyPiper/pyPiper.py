@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import json
 from collections import defaultdict, deque
 
-from executors import Executor, ParallelExecutor
+from pyPiper.executors import Executor, ParallelExecutor
 
 class Pipeline():
     def __init__(self, graph, n_threads=1, quiet=False, update_callback=None, **kwargs):

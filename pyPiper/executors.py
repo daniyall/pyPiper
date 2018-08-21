@@ -119,12 +119,11 @@ class Executor(BaseExecutor):
 
         root._run(None)
 
-        self.progress_current = self.total_done
-        self.progress_max = self.total_size
-
         for parcel in root._output_buffer:
             for successor in self.graph._graph[root]:
                 self.send(root, successor, parcel)
+                self.progress_current += 1
+
         if len(self.graph._graph[root]) == 0:
             self.print_buffer(root._output_buffer)
         root._output_buffer.clear()

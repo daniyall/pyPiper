@@ -86,5 +86,5 @@ if __name__ == '__main__':
     # p.run()
 
     with TqdmUpdate(desc="Progress") as pbar:
-        p = Pipeline(gen | sleeper | double, n_threads=4, update_callback=pbar.update, quiet=True)
+        p = Pipeline(gen | sleeper | double, n_threads=1, update_callback=pbar.update, quiet=True)
         p.run()
