@@ -1,6 +1,8 @@
 from pyPiper import Node, Pipeline
-import time
 from tqdm import tqdm
+
+import time
+import random
 
 class Generate(Node):
     def setup(self, size, reverse=False):
@@ -50,7 +52,8 @@ class Double(Node):
 
 class Sleep(Node):
     def run(self, data):
-        time.sleep(5)
+        time.sleep(random.randint(1,4))
+        self.emit(data)
 
 class Half(Node):
     def run(self, data):
@@ -66,23 +69,22 @@ class Printer(Node):
 
 
 class TqdmUpdate(tqdm):
-    def update(self, delta=1, total_size=None):
+    def update(self, done, total_size=None):
         if total_size is not None:
             self.total = total_size
-        super().update(delta)
-
-
-def tmp(delta, total):
-    print(delta, total)
+        self.n = done
+        super().refresh()
 
 if __name__ == '__main__':
-    gen = Generate("gen", size=16)
+    gen = Generate("gen", size=10)
     double = Double("double")
     printer = Printer("printer", batch_size=1)
+    sleeper = Sleep("sleep")
+    sleeper1 = Sleep("sleep1")
 
     # p = Pipeline(gen | double | printer, n_threads=1)
     # p.run()
 
-    # with TqdmUpdate(desc="Progress") as pbar:
-    p = Pipeline(gen | double | printer, n_threads=4)
-    p.run()
+    with TqdmUpdate(desc="Progress") as pbar:
+        p = Pipeline(gen | sleeper | double, n_threads=4, update_callback=pbar.update)
+        p.run()

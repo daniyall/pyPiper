@@ -1,9 +1,10 @@
+import multiprocessing
 from collections import deque
 from abc import ABC, abstractmethod
 from functools import reduce
 
 from multiprocessing import Pool, Manager, Queue
-from multiprocessing.pool import ApplyResult
+from multiprocessing.pool import ApplyResult, AsyncResult
 from queue import Empty
 
 STATE_RUNNING = 1
@@ -44,6 +45,9 @@ class BaseExecutor(ABC):
         self.update_callback = update_callback
         self.use_callback = False
 
+        self.progress_max = 0
+        self.progress_current = 0
+
     def print_buffer(self, buffer):
         if not self.quiet and buffer:
             for parcel in buffer:
@@ -61,25 +65,31 @@ class BaseExecutor(ABC):
     def _step(self):
         pass
 
+    def update_progress(self):
+        if self.use_callback:
+            self.update_callback(self.progress_current, self.progress_max)
+
     def is_finished(self):
         return self.graph.is_all_closed()
 
     def run(self):
         if self.update_callback is not None and self.graph._root.size is not None:
             self.use_callback = True
-            self.total_size = self.graph._root.size
+            self.progress_max = self.graph._root.size
 
         while not self.is_finished():
             self._run_root()
             self._step()
 
+            self.update_progress()
+
 
 class Executor(BaseExecutor):
     def __init__(self, graph, quiet=False, update_callback=None):
         super().__init__(graph, quiet, update_callback)
-        self.run_count = 0
-        self.tmp=""
         self.queues = {}
+        self.total_done = 0
+
         for node in graph._node_list:
             for successor in graph._graph[node]:
                 self.queues[self.get_key(node, successor)] = deque()
@@ -106,9 +116,9 @@ class Executor(BaseExecutor):
         root.state_transition()
 
         root._run(None)
-        if self.use_callback:
-            self.update_callback(1, self.total_size)
 
+        self.progress_current = self.total_done
+        self.progress_max = self.total_size
 
         for parcel in root._output_buffer:
             for successor in self.graph._graph[root]:
@@ -119,7 +129,7 @@ class Executor(BaseExecutor):
 
 
     def _step(self):
-        self.run_count += 1
+        self.total_done += 1
         for node in self.graph:
             node.state_transition()
             successors = self.graph._graph[node]
@@ -162,7 +172,7 @@ class ParallelExecutor(BaseExecutor):
 
         self.iters_without_wait = [0 for x in range(n_threads)]
 
-        self.MAX_ITERS_WITHOUT_WAIT = 1000
+        self.MAX_ITERS_WITHOUT_WAIT = 10
 
         for i in range(n_threads):
             self.queues.append({})
@@ -177,8 +187,6 @@ class ParallelExecutor(BaseExecutor):
         if root._state == root.STATE_RUNNING:
             for i in range(self.n_threads):
                 root._run(None)
-                if self.use_callback:
-                    self.update_callback(1, self.total_size)
         else:
             root.state_transition()
 
@@ -201,15 +209,21 @@ class ParallelExecutor(BaseExecutor):
         root = self.graph._root
 
         for i in range(self.n_threads):
+            res = self.results[i]
+            if isinstance(res, (ApplyResult, AsyncResult)):
+                self.iters_without_wait[i] += 1
 
-            if isinstance(self.results[i], ApplyResult):
-                if self.results[i].ready():
-                    self.finished[i] = self.finished[i] | self.results[i].get()
+                # print(i, res.ready(), self.iters_without_wait[i], self.MAX_ITERS_WITHOUT_WAIT)
+                if res.ready() or self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
+                # if True:
+                    is_finished, sent_count = res.get()
+                    self.finished[i] = self.finished[i] | is_finished
                     self.iters_without_wait[i] = 0
-                else:
-                    self.iters_without_wait[i] += 1
-                    if self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
-                        self.finished[i] = self.finished[i] | self.results[i].get()
+
+                    self.progress_current += sent_count
+                    self.update_progress()
+
+
 
             queues = self.queues[i]
             args = []
@@ -230,22 +244,23 @@ class ParallelExecutor(BaseExecutor):
         self.pool.close()
         self.pool.join()
 
-import os
-
 class SingleExecRunner(object):
     def __init__(self, executor):
         self.executor = executor
+        self.sent_count = 0
 
     def step(self, root_state, args):
         for root, successor, parcel in args:
             self.executor.send(root, successor, parcel)
+
+        self.sent_count += len(args)
 
         self.executor._step()
 
         if root_state == STATE_CLOSING:
             self.executor.graph._root._state = STATE_CLOSING
 
-        return self.executor.is_finished()
+        return self.executor.is_finished(), self.sent_count
 
     def is_finished(self):
         return self.executor.is_finished()
