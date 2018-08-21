@@ -1,4 +1,6 @@
+import ctypes
 import multiprocessing
+import os
 from collections import deque
 from abc import ABC, abstractmethod
 from functools import reduce
@@ -156,11 +158,10 @@ class Executor(BaseExecutor):
 
 
 class ParallelExecutor(BaseExecutor):
-    def __init__(self, graph, n_threads, quiet=False, update_callback=None):
+    def __init__(self, graph, n_threads, quiet=False, update_callback=None, max_task_queue_size=1000):
         super().__init__(graph, quiet, update_callback)
 
         self.n_threads = n_threads
-        self.pool = Pool(processes=n_threads)
         self.manager = Manager()
 
         root = self.graph._root
@@ -170,13 +171,14 @@ class ParallelExecutor(BaseExecutor):
         self.results = [False for i in range(n_threads)]
         self.finished = [False for i in range(n_threads)]
 
-        self.iters_without_wait = [0 for x in range(n_threads)]
+        self.done_counts = [self.manager.Value(ctypes.c_int, 0, lock=False) for i in range(n_threads)]
 
-        self.MAX_ITERS_WITHOUT_WAIT = 10
+        self.max_task_queue_size = max_task_queue_size
+
+        self.executor = SingleExecRunner(Executor(graph, quiet))
 
         for i in range(n_threads):
             self.queues.append({})
-            self.executors[i] = SingleExecRunner(Executor(graph, quiet))
 
             for successor in self.graph._graph[root]:
                 self.queues[i][self.get_key(root, successor)] = deque()
@@ -210,20 +212,21 @@ class ParallelExecutor(BaseExecutor):
 
         for i in range(self.n_threads):
             res = self.results[i]
+
             if isinstance(res, (ApplyResult, AsyncResult)):
-                self.iters_without_wait[i] += 1
+                # self.iters_without_wait[i] += 1
 
                 # print(i, res.ready(), self.iters_without_wait[i], self.MAX_ITERS_WITHOUT_WAIT)
-                if res.ready() or self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
+                # print("ready", res.ready(), self.iters_without_wait)
+                # if res.ready() or self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
                 # if True:
-                    is_finished, sent_count = res.get()
+                if self.pool._taskqueue.qsize() >= self.max_task_queue_size or res.ready():
+                    is_finished = res.get()
                     self.finished[i] = self.finished[i] | is_finished
-                    self.iters_without_wait[i] = 0
+                    # self.done_counts[i] = sent_count
 
-                    self.progress_current += sent_count
-                    self.update_progress()
-
-
+                    # print(sent_count, self.done_counts)
+                    # if sent_count > 0:
 
             queues = self.queues[i]
             args = []
@@ -233,12 +236,17 @@ class ParallelExecutor(BaseExecutor):
                         parcel = q.popleft()
                         args.append((root, successor, parcel))
 
-            res = self.pool.apply_async(self.executors[i].step, (root._state, args), error_callback=error_func)
+            res = self.pool.apply_async(self.executor.step, (root._state, self.done_counts[i], args), error_callback=error_func)
             self.results[i] = res
+
+        self.progress_current = sum([x.value for x in self.done_counts])
+        self.update_progress()
 
         # print(msg)
 
     def run(self):
+        self.pool = Pool(processes=self.n_threads)
+
         super().run()
 
         self.pool.close()
@@ -249,18 +257,22 @@ class SingleExecRunner(object):
         self.executor = executor
         self.sent_count = 0
 
-    def step(self, root_state, args):
+    def step(self, root_state, done_count, args):
         for root, successor, parcel in args:
             self.executor.send(root, successor, parcel)
 
         self.sent_count += len(args)
 
+        if len(args) > 0:
+            done_count.value = done_count.value + len(args)
+
         self.executor._step()
+
 
         if root_state == STATE_CLOSING:
             self.executor.graph._root._state = STATE_CLOSING
 
-        return self.executor.is_finished(), self.sent_count
+        return self.executor.is_finished()
 
     def is_finished(self):
         return self.executor.is_finished()

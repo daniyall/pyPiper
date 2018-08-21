@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from executors import Executor, ParallelExecutor
 
 class Pipeline():
-    def __init__(self, graph, n_threads=1, quiet=False, update_callback=None):
+    def __init__(self, graph, n_threads=1, quiet=False, update_callback=None, **kwargs):
         if not isinstance(graph, NodeGraph):
             raise Exception("Graph must be a node graph. Got %s" % type(graph))
 
@@ -13,9 +13,9 @@ class Pipeline():
         self.update_callback = update_callback
 
         if n_threads == 1:
-            self._executor = Executor(graph, quiet, update_callback)
+            self._executor = Executor(graph, quiet, update_callback,**kwargs)
         elif n_threads > 1:
-            self._executor = ParallelExecutor(graph, n_threads, quiet, update_callback)
+            self._executor = ParallelExecutor(graph, n_threads, quiet, update_callback, **kwargs)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
