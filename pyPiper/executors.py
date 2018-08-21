@@ -171,7 +171,7 @@ class ParallelExecutor(BaseExecutor):
         self.results = [False for i in range(n_threads)]
         self.finished = [False for i in range(n_threads)]
 
-        self.done_counts = [self.manager.Value(ctypes.c_int, 0, lock=False) for i in range(n_threads)]
+        self.done_count = self.manager.Value(ctypes.c_int, 0, lock=True)
 
         self.max_task_queue_size = max_task_queue_size
 
@@ -207,6 +207,13 @@ class ParallelExecutor(BaseExecutor):
 
         return all_finished
 
+
+    def finished_count(self):
+        return sum([1 for f in self.finished if f])
+
+    def almost_finished(self):
+        return self.n_threads - self.finished_count() <= 1
+
     def _step(self):
         root = self.graph._root
 
@@ -214,19 +221,9 @@ class ParallelExecutor(BaseExecutor):
             res = self.results[i]
 
             if isinstance(res, (ApplyResult, AsyncResult)):
-                # self.iters_without_wait[i] += 1
-
-                # print(i, res.ready(), self.iters_without_wait[i], self.MAX_ITERS_WITHOUT_WAIT)
-                # print("ready", res.ready(), self.iters_without_wait)
-                # if res.ready() or self.iters_without_wait[i] >= self.MAX_ITERS_WITHOUT_WAIT:
-                # if True:
-                if self.pool._taskqueue.qsize() >= self.max_task_queue_size or res.ready():
+                if self.pool._taskqueue.qsize() >= self.max_task_queue_size or res.ready() or self.almost_finished():
                     is_finished = res.get()
                     self.finished[i] = self.finished[i] | is_finished
-                    # self.done_counts[i] = sent_count
-
-                    # print(sent_count, self.done_counts)
-                    # if sent_count > 0:
 
             queues = self.queues[i]
             args = []
@@ -236,13 +233,11 @@ class ParallelExecutor(BaseExecutor):
                         parcel = q.popleft()
                         args.append((root, successor, parcel))
 
-            res = self.pool.apply_async(self.executor.step, (root._state, self.done_counts[i], args), error_callback=error_func)
+            res = self.pool.apply_async(self.executor.step, (root._state, self.done_count, args), error_callback=error_func)
             self.results[i] = res
 
-        self.progress_current = sum([x.value for x in self.done_counts])
-        self.update_progress()
+        self.progress_current = self.done_count.value
 
-        # print(msg)
 
     def run(self):
         self.pool = Pool(processes=self.n_threads)
@@ -252,22 +247,22 @@ class ParallelExecutor(BaseExecutor):
         self.pool.close()
         self.pool.join()
 
+        self.progress_current = self.progress_max
+        self.update_progress()
+
+
 class SingleExecRunner(object):
     def __init__(self, executor):
         self.executor = executor
-        self.sent_count = 0
 
     def step(self, root_state, done_count, args):
         for root, successor, parcel in args:
             self.executor.send(root, successor, parcel)
 
-        self.sent_count += len(args)
-
-        if len(args) > 0:
-            done_count.value = done_count.value + len(args)
-
         self.executor._step()
 
+        if len(args) > 0:
+            done_count.value += len(args)
 
         if root_state == STATE_CLOSING:
             self.executor.graph._root._state = STATE_CLOSING
