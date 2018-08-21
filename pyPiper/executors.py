@@ -122,7 +122,9 @@ class Executor(BaseExecutor):
         for parcel in root._output_buffer:
             for successor in self.graph._graph[root]:
                 self.send(root, successor, parcel)
-                self.progress_current += 1
+
+        if len(root._output_buffer) > 0:
+            self.progress_current += 1
 
         if len(self.graph._graph[root]) == 0:
             self.print_buffer(root._output_buffer)
