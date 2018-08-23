@@ -11,7 +11,6 @@ class Generate(Node):
         self.size = size
         self.reverse = reverse
         self.pos = 0
-        self.stateless = False
 
     def run(self, data):
         if self.pos < self.size:
@@ -30,7 +29,6 @@ class EvenOddGenerate(Node):
         self.size = size
         self.reverse = reverse
         self.pos = 0
-        self.stateless = False
 
     def run(self, data):
         if self.pos < self.size:
@@ -63,7 +61,6 @@ class Half(Node):
 
 class Printer(Node):
     def setup(self):
-        self.stateless = False
         self.batch_size = Node.BATCH_SIZE_ALL
 
     def run(self, data):
@@ -79,7 +76,7 @@ class TqdmUpdate(tqdm):
         super().refresh()
 
 if __name__ == '__main__':
-    gen = Generate("gen", size=10000)
+    gen = Generate("gen", size=100)
     double = Double("double")
     square = Square("square")
     printer1 = Printer("printer1", batch_size=1)
@@ -93,7 +90,7 @@ if __name__ == '__main__':
     # p = Pipeline(gen | double | printer, n_threads=1)
     # p.run()
 
-    # with TqdmUpdate(desc="Progress") as pbar:
-    pbar=None
-    p = Pipeline(gen | [double, square], n_threads=4, update_callback=pbar, quiet=False)
-    p.run()
+    p = Pipeline(gen | [double, sleeper], n_threads=5, quiet=True)
+    with TqdmUpdate(desc="Progress") as pbar:
+    # pbar=None
+        p.run(update_callback=pbar.update)

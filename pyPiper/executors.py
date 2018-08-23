@@ -40,10 +40,11 @@ def _filter_data_stream(node, next_node, parcels):
 
 
 class BaseExecutor(ABC):
-    def __init__(self, graph, quiet=False, update_callback=None):
+    def __init__(self, graph, quiet=False):
         self.graph = graph
         self.quiet = quiet
-        self.update_callback = update_callback
+
+        self.update_callback = None
         self.use_callback = False
 
         self.progress_max = 0
@@ -73,8 +74,10 @@ class BaseExecutor(ABC):
     def is_finished(self):
         return self.graph.is_all_closed()
 
-    def run(self):
-        if self.update_callback is not None and self.graph._root.size is not None:
+    def run(self, update_callback=None):
+        self.update_callback = update_callback
+
+        if self.update_callback and self.graph._root.size:
             self.use_callback = True
             self.progress_max = self.graph._root.size
             self.update_progress()
@@ -87,8 +90,8 @@ class BaseExecutor(ABC):
 
 
 class Executor(BaseExecutor):
-    def __init__(self, graph, quiet=False, update_callback=None):
-        super().__init__(graph, quiet, update_callback)
+    def __init__(self, graph, quiet=False):
+        super().__init__(graph, quiet)
         self.queues = {}
         self.total_done = 0
 
@@ -171,8 +174,8 @@ class Executor(BaseExecutor):
 
 
 class ParallelExecutor(BaseExecutor):
-    def __init__(self, graph, n_threads, quiet=False, update_callback=None, max_task_queue_size=1000):
-        super().__init__(graph, quiet, update_callback)
+    def __init__(self, graph, n_threads, quiet=False):
+        super().__init__(graph, quiet)
 
         self.n_threads = n_threads
         self.manager = Manager()
@@ -241,10 +244,10 @@ class ParallelExecutor(BaseExecutor):
         self.update_progress()
 
 
-    def run(self):
+    def run(self, update_callback=None):
         self.pool = Pool(processes=self.n_threads)
 
-        super().run()
+        super().run(update_callback)
 
         self.pool.close()
         self.pool.join()

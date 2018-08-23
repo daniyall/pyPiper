@@ -4,22 +4,21 @@ import json
 from pyPiper.executors import Executor, ParallelExecutor
 
 class Pipeline():
-    def __init__(self, graph, n_threads=1, quiet=False, update_callback=None, **kwargs):
+    def __init__(self, graph, n_threads=1, quiet=False, **kwargs):
         if not isinstance(graph, NodeGraph):
             raise Exception("Graph must be a node graph. Got %s" % type(graph))
 
         self.graph = graph
-        self.update_callback = update_callback
 
         if n_threads == 1:
-            self._executor = Executor(graph, quiet, update_callback,**kwargs)
+            self._executor = Executor(graph, quiet,**kwargs)
         elif n_threads > 1:
-            self._executor = ParallelExecutor(graph, n_threads, quiet, update_callback, **kwargs)
+            self._executor = ParallelExecutor(graph, n_threads, quiet, **kwargs)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
-    def run(self):
-        self._executor.run()
+    def run(self, update_callback=None,):
+        self._executor.run(update_callback)
 
 
 class _Parcel(object):
@@ -88,6 +87,10 @@ class Node(ABC):
             self.__setattr__(k, override[k])
 
         assert self.batch_size > 0
+
+        if hasattr(self, "stateless"):
+            raise DeprecationWarning("%s is declared stateless. Stateless is deprecated and does not do anything" % str(self))
+
 
 
     def __str__(self):
@@ -234,42 +237,4 @@ class NodeGraph(object):
 
 
 if __name__ == '__main__':
-    class DummyNode(Node):
-        def run(self, data):
-            pass
-
-    n1 = DummyNode("N1")
-    n2 = DummyNode("N2")
-    n3 = DummyNode("N3")
-    n4 = DummyNode("N4")
-    n5 = DummyNode("N5")
-    n6 = DummyNode("N6")
-    n7 = DummyNode("N7")
-
-    # g1 = NodeGraph(n1)
-    # g1.add(n1, n2)
-    # g1.add(n1, n3)
-    #
-    # g2 = NodeGraph(n7)
-    # g2.add(n7, n6)
-    #
-    # print(g1)
-    # print(g2)
-    #
-    # g1.add(n2, g2)
-    #
-    # print(g1)
-
-    # g = NodeGraph(n1)
-    # g.add(n1, n2)
-    # g.add(n1, [n3, n4])
-    #
-    # g.add(n2, [n5, n6])
-    #
-    # print(g)
-
-    g = n1 | [n2 | [n3, n4]]
-
-    print(g)
-
-    # print(n1 | n2 | [n3, [n4, n5]])
+    pass

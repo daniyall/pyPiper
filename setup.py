@@ -13,7 +13,7 @@ setup(
     version = '0.5.0',
     description = 'A pipelining framework designed for data analysis but can be useful to other applications',
     author = 'daniyall',
-    author_email = 'daniyal.l@outlook.com',
+    author_email = 'dev.daniyall@gmail.com',
     url = 'https://github.com/daniyall/pyPiper',
     download_url = 'https://github.com/daniyall/pyPiper/archive/0.5.0.tar.gz',
     keywords = ['data-science', 'pipelining', 'stream-processing', "data-analysis"],
