@@ -391,9 +391,9 @@ class PyPiperTests(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main(buffer=True)
 
-    # gen = Generate("gen", size=10, out_streams="num")
-    # double = Double("double", out_streams="num", in_streams="num")
-    # square = Square("square", out_streams="num", in_streams="num")
+    # gen = Generate("gen", size=10)
+    # double = Double("double")
+    # square = Square("square")
     # p = Pipeline(gen | [double, square])
     #
     # p.run()

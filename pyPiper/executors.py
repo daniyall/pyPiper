@@ -1,9 +1,11 @@
 import ctypes
 import multiprocessing
 import os
+import time
 from collections import deque
 from abc import ABC, abstractmethod
 from functools import reduce
+from itertools import islice
 
 from multiprocessing import Pool, Manager, Queue
 from multiprocessing.pool import ApplyResult, AsyncResult
@@ -33,9 +35,6 @@ def _filter_data_stream(node, next_node, parcels):
             else:
                 for k in next_node.in_streams:
                     to_push.append(data[node.out_streams.index(k)])
-
-    if len(to_push) == 1:
-        to_push = to_push[0]
 
     return to_push
 
@@ -78,6 +77,7 @@ class BaseExecutor(ABC):
         if self.update_callback is not None and self.graph._root.size is not None:
             self.use_callback = True
             self.progress_max = self.graph._root.size
+            self.update_progress()
 
         while not self.is_finished():
             self._run_root()
@@ -142,7 +142,19 @@ class Executor(BaseExecutor):
 
                 if data:
                     data = _filter_data_stream(node, successor, data)
-                    successor._run(data)
+
+                    if successor.batch_size == 1:
+                        for d in data:
+                            successor._run(d)
+                    elif successor.batch_size == float("inf"):
+                        successor._run(data)
+                    else:
+                        it = iter(data)
+                        while True:
+                            d = tuple(islice(it, successor.batch_size))
+                            if not d:
+                                break
+                            successor._run(d)
 
                 for d in successor._output_buffer:
                     super_successors = self.graph._graph[successor]
@@ -165,24 +177,19 @@ class ParallelExecutor(BaseExecutor):
         self.n_threads = n_threads
         self.manager = Manager()
 
-        root = self.graph._root
-        self.queues = []
+        self.queues = [[] for i in range(n_threads)]
         self.executors = list(range(n_threads))
 
-        self.results = [False for i in range(n_threads)]
-        self.finished = [False for i in range(n_threads)]
-
-        self.done_count = self.manager.Value(ctypes.c_int, 0, lock=True)
-
-        self.max_task_queue_size = max_task_queue_size
+        self.done_counter = self.manager.Value(ctypes.c_int, 0, lock=False)
+        self.counter_lock = self.manager.Lock()
 
         self.executor = SingleExecRunner(Executor(graph, quiet))
 
-        for i in range(n_threads):
-            self.queues.append({})
+        self._last_res = None
 
-            for successor in self.graph._graph[root]:
-                self.queues[i][self.get_key(root, successor)] = deque()
+        self.root_closed = False
+
+        self._curr_thread = 0
 
     def _run_root(self):
         root = self.graph._root
@@ -190,54 +197,48 @@ class ParallelExecutor(BaseExecutor):
         if root._state == root.STATE_RUNNING:
             for i in range(self.n_threads):
                 root._run(None)
+        elif root._state == root.STATE_CLOSED:
+            self.root_closed = True
         else:
             root.state_transition()
 
-        thread = 0
         for parcel in root._output_buffer:
-            for successor in self.graph._graph[root]:
-                self.queues[thread][self.get_key(root, successor)].append(parcel)
-            thread += 1
+            self.queues[self._curr_thread].append(parcel)
+
+            self._curr_thread += 1
+            if self._curr_thread == self.n_threads:
+                self._curr_thread = 0
 
         if len(self.graph._graph[root]) == 0:
             self.print_buffer(root._output_buffer)
+
         root._output_buffer.clear()
 
     def is_finished(self):
-        all_finished = reduce(lambda x,y: x and y, self.finished)
+        if self._last_res and not self._last_res.ready():
+            return False
 
-        return all_finished
-
-
-    def finished_count(self):
-        return sum([1 for f in self.finished if f])
-
-    def almost_finished(self):
-        return self.n_threads - self.finished_count() <= 1
+        return self.root_closed and self.pool._taskqueue.empty()
 
     def _step(self):
         root = self.graph._root
 
+        args = []
         for i in range(self.n_threads):
-            res = self.results[i]
+            q = self.queues[i]
 
-            if isinstance(res, (ApplyResult, AsyncResult)):
-                if self.pool._taskqueue.qsize() >= self.max_task_queue_size or res.ready() or self.almost_finished():
-                    is_finished = res.get()
-                    self.finished[i] = self.finished[i] | is_finished
+            if len(q) > 0:
+                arg = root._state, self.done_counter, self.counter_lock, []
+                while len(q) > 0:
+                    parcel = q.pop()
+                    arg[-1].append(parcel)
 
-            queues = self.queues[i]
-            args = []
-            for q in queues.values():
-                for successor in self.graph._graph[root]:
-                    if len(q) > 0:
-                        parcel = q.popleft()
-                        args.append((root, successor, parcel))
+                args.append(arg)
 
-            res = self.pool.apply_async(self.executor.step, (root._state, self.done_count, args), error_callback=error_func)
-            self.results[i] = res
+        self._last_res = self.pool.starmap_async(self.executor.step, args, error_callback=error_func)
 
-        self.progress_current = self.done_count.value
+        self.progress_current = self.done_counter.value
+        self.update_progress()
 
 
     def run(self):
@@ -248,27 +249,31 @@ class ParallelExecutor(BaseExecutor):
         self.pool.close()
         self.pool.join()
 
-        self.progress_current = self.progress_max
+        self.progress_current = self.done_counter.value
         self.update_progress()
+
 
 
 class SingleExecRunner(object):
     def __init__(self, executor):
         self.executor = executor
+        self.root = executor.graph._root
 
-    def step(self, root_state, done_count, args):
-        for root, successor, parcel in args:
-            self.executor.send(root, successor, parcel)
+    def step(self, root_state, done_counter, counter_lock, parcels):
+        if parcels:
+            for parcel in parcels:
+                for successor in self.executor.graph._graph[self.root]:
+                    self.executor.send(self.root, successor, parcel)
 
         self.executor._step()
 
-        if len(args) > 0:
-            done_count.value += len(args)
+        if parcels:
+            counter_lock.acquire()
+            done_counter.value += len(parcels)
+            counter_lock.release()
 
         if root_state == STATE_CLOSING:
             self.executor.graph._root._state = STATE_CLOSING
-
-        return self.executor.is_finished()
 
     def is_finished(self):
         return self.executor.is_finished()

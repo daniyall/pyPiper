@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 import json
-from collections import defaultdict, deque
 
 from pyPiper.executors import Executor, ParallelExecutor
 

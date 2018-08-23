@@ -1,3 +1,5 @@
+import os
+
 from pyPiper import Node, Pipeline
 from tqdm import tqdm
 
@@ -65,6 +67,7 @@ class Printer(Node):
         self.batch_size = Node.BATCH_SIZE_ALL
 
     def run(self, data):
+
         print(data)
 
 
@@ -76,15 +79,21 @@ class TqdmUpdate(tqdm):
         super().refresh()
 
 if __name__ == '__main__':
-    gen = Generate("gen", size=10)
+    gen = Generate("gen", size=10000)
     double = Double("double")
-    printer = Printer("printer", batch_size=1)
+    square = Square("square")
+    printer1 = Printer("printer1", batch_size=1)
+    printer2 = Printer("printer2", batch_size=1)
     sleeper = Sleep("sleep")
     sleeper1 = Sleep("sleep1")
+
+    # p = Pipeline(gen | [sleeper, sleeper1], quiet=False, n_threads=50)
+    # p.run()
 
     # p = Pipeline(gen | double | printer, n_threads=1)
     # p.run()
 
-    with TqdmUpdate(desc="Progress") as pbar:
-        p = Pipeline(gen | sleeper | double, n_threads=1, update_callback=pbar.update, quiet=True)
-        p.run()
+    # with TqdmUpdate(desc="Progress") as pbar:
+    pbar=None
+    p = Pipeline(gen | [double, square], n_threads=4, update_callback=pbar, quiet=False)
+    p.run()
