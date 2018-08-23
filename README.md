@@ -62,7 +62,6 @@ and feature extraction. For example:
 class Generate(Node):
     def setup(self, size):
         self.pos = 0
-        self.stateless = False
 
     def run(self, data):
         if self.pos < self.size:
@@ -75,10 +74,6 @@ pipeline = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print
 print(pipeline)
 pipeline.run()
 ```
-
-Note that since the generate Node needs to store state (pos` variable), it must set `self.stateless = False`. 
-This keeps the nodes state synchronized between different processes.
-
 
 ## Stream Names
 You can also name input and output streams. For example:
@@ -100,3 +95,29 @@ EvenOddGenerate generates a pair of numbers. using the `out_streams` parameter, 
 number odd. When initializing the double and square nodes, we tell double to take the even number and square to take
 the odd number. 
 
+
+## Progress updates
+When calling `pipeline.run()`, you can provide a callback function for progress updates. Whenever
+the pipelines makes progress, it calls this function with the number of items that have been processed
+so far and the total number of items that need to be processed. For example, if you were using a
+tqdm progress bar, you could use the following code:
+
+```python
+from tqdm import tqdm
+
+class TqdmUpdate(tqdm):
+    def update(self, done, total_size=None):
+        if total_size is not None:
+            self.total = total_size
+        self.n = done
+        super().refresh()
+
+if __name__ == '__main__':
+    gen = Generate("gen", size=10)
+    double = Double("double")
+    sleeper = Sleep("sleep")
+
+    p = Pipeline(gen | [double, sleeper], n_threads=4, quiet=True)
+    with TqdmUpdate(desc="Progress") as pbar:
+        p.run(update_callback=pbar.update)
+```

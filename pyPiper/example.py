@@ -1,12 +1,16 @@
+import os
+
 from pyPiper import Node, Pipeline
+from tqdm import tqdm
+
 import time
+import random
 
 class Generate(Node):
     def setup(self, size, reverse=False):
         self.size = size
         self.reverse = reverse
         self.pos = 0
-        self.stateless = False
 
     def run(self, data):
         if self.pos < self.size:
@@ -25,7 +29,6 @@ class EvenOddGenerate(Node):
         self.size = size
         self.reverse = reverse
         self.pos = 0
-        self.stateless = False
 
     def run(self, data):
         if self.pos < self.size:
@@ -49,7 +52,8 @@ class Double(Node):
 
 class Sleep(Node):
     def run(self, data):
-        time.sleep(5)
+        time.sleep(random.randint(1,4))
+        self.emit(data)
 
 class Half(Node):
     def run(self, data):
@@ -57,28 +61,36 @@ class Half(Node):
 
 class Printer(Node):
     def setup(self):
-        self.stateless = False
         self.batch_size = Node.BATCH_SIZE_ALL
 
     def run(self, data):
+
         print(data)
 
+
+class TqdmUpdate(tqdm):
+    def update(self, done, total_size=None):
+        if total_size is not None:
+            self.total = total_size
+        self.n = done
+        super().refresh()
+
 if __name__ == '__main__':
-    # p1 = Pipeline(Generate("gen", size=10) | Square("square"), quiet=False)
-    # print(p1)
-    # p1.run()
-    #
-    # p2 = Pipeline(Generate("gen", size=10) | Square("square") | Printer("print"))
-    # print(p2)
-    # p2.run()
-    #
-    # p3 = Pipeline(Generate("gen", size=10) | Square("square") | Double("double"), n_threads=4, quiet=False)
-    # print(p3)
-    # p3.run()
-
-    gen = Generate("gen", size=5)
+    gen = Generate("gen", size=100)
     double = Double("double")
-    printer = Printer("printer", batch_size=Node.BATCH_SIZE_ALL)
-    p = Pipeline(gen | double | printer, n_threads=4)
+    square = Square("square")
+    printer1 = Printer("printer1", batch_size=1)
+    printer2 = Printer("printer2", batch_size=1)
+    sleeper = Sleep("sleep")
+    sleeper1 = Sleep("sleep1")
 
-    p.run()
+    # p = Pipeline(gen | [sleeper, sleeper1], quiet=False, n_threads=50)
+    # p.run()
+
+    # p = Pipeline(gen | double | printer, n_threads=1)
+    # p.run()
+
+    p = Pipeline(gen | [double, sleeper], n_threads=5, quiet=True)
+    with TqdmUpdate(desc="Progress") as pbar:
+    # pbar=None
+        p.run(update_callback=pbar.update)
