@@ -15,7 +15,7 @@ setup(
     author = 'daniyall',
     author_email = 'daniyal.l@outlook.com',
     url = 'https://github.com/daniyall/pyPiper',
-    download_url = 'https://github.com/daniyall/pyPiper/archive/0.4.1.tar.gz',
+    download_url = 'https://github.com/daniyall/pyPiper/archive/0.5.0.tar.gz',
     keywords = ['data-science', 'pipelining', 'stream-processing', "data-analysis"],
     classifiers = [],
     python_requires=">=3",
