@@ -1,6 +1,7 @@
 import ctypes
 import multiprocessing
 import os
+import queue
 import time
 from collections import deque
 from abc import ABC, abstractmethod
@@ -74,13 +75,15 @@ class BaseExecutor(ABC):
     def is_finished(self):
         return self.graph.is_all_closed()
 
-    def run(self, update_callback=None):
+    def _init_update(self, update_callback):
         self.update_callback = update_callback
-
-        if self.update_callback and self.graph._root.size:
+        if self.update_callback is not None and hasattr(self.graph._root, "size"):
             self.use_callback = True
             self.progress_max = self.graph._root.size
             self.update_progress()
+
+    def run(self, update_callback=None):
+        self._init_update(update_callback)
 
         while not self.is_finished():
             self._run_root()
@@ -284,3 +287,105 @@ class SingleExecRunner(object):
 def error_func(value):
     print(type(value), value)
     raise value
+
+
+
+def _child_run(queue: multiprocessing.Queue, graph, done_count, quiet):
+    executor = Executor(graph, quiet=quiet)
+    root = graph._root
+
+    while not executor.is_finished():
+        if not queue.empty():
+            parcel = queue.get()
+            if parcel == "close":
+                root.close()
+                continue
+        else:
+            parcel = None
+
+        root.state_transition()
+
+        if parcel:
+            for successor in graph._graph[root]:
+                executor.send(root, successor, parcel)
+            with done_count.get_lock():
+                done_count.value += 1
+
+        executor._step()
+
+
+class ParallelExecutor2(BaseExecutor):
+    MAX_QUEUE_SIZE = 100
+    def __init__(self, graph, n_threads, quiet=False):
+        super().__init__(graph, quiet)
+        self.n_threads = n_threads
+
+    def _run_root(self):
+        raise Exception("ParallelExecutor2 does not use _run_root or _step. These should not be called")
+
+    def _step(self):
+        raise Exception("ParallelExecutor2 does not use _run_root or _step. These should not be called")
+
+    def do_update(self, children):
+        total_done = 0
+        for i in range(self.n_threads):
+            total_done += children[i]["count"].value
+        self.progress_current = total_done
+        self.update_progress()
+
+    def run(self, update_callback=None):
+        self._init_update(update_callback)
+
+        root = self.graph._root
+
+        children = []
+        for i in range(self.n_threads):
+            q = multiprocessing.Queue(ParallelExecutor2.MAX_QUEUE_SIZE)
+            count = multiprocessing.Value(ctypes.c_int, 0, lock=True)
+            p = multiprocessing.Process(target=_child_run, args=(q, self.graph, count, self.quiet))
+            children.append({"process": p, "queue": q, "count": count})
+            children[i]["process"].start()
+
+        t = 0
+        while root._state != STATE_CLOSED:
+            root.state_transition()
+            root._run(None)
+
+            if len(root._output_buffer) > 0:
+                for parcel in root._output_buffer:
+                    added = False
+                    while not added:
+                        q = children[t]["queue"]
+
+                        try:
+                            q.put(parcel, timeout=1)
+                            added = True
+                        except queue.Full:
+                            pass
+
+                        t += 1
+                        if t == self.n_threads:
+                            t = 0
+            else:
+                time.sleep(1)
+
+            self.do_update(children)
+
+            root._output_buffer.clear()
+
+
+        for i in range(self.n_threads):
+            children[i]["queue"].put("close")
+
+        all_done = False
+        while not all_done:
+            all_done = True
+
+            for i in range(self.n_threads):
+                children[i]["process"].join(timeout=1)
+                if children[i]["process"].exitcode is None:
+                    all_done = False
+
+            self.do_update(children)
+
+

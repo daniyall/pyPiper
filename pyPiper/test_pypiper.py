@@ -2,7 +2,7 @@ import unittest
 import sys
 
 from pyPiper import NodeGraph, Node, Pipeline
-from example import Generate, Double, Square, Printer, Half, EvenOddGenerate
+from pyPiper.nodes import Generate, Double, Square, Printer, EvenOddGenerate, Sleep, TqdmUpdate
 
 
 def get_output():
@@ -389,11 +389,15 @@ class PyPiperTests(unittest.TestCase):
         self.assertCountEqual(output, expected_out)
 
 if __name__ == '__main__':
-    unittest.main(buffer=True)
+    # unittest.main(buffer=True)
 
-    # gen = Generate("gen", size=10)
-    # double = Double("double")
-    # square = Square("square")
-    # p = Pipeline(gen | [double, square])
-    #
-    # p.run()
+    gen = Generate("gen", size=10)
+    double = Double("double")
+    square = Square("square")
+    sleep = Sleep("sleep")
+    p = Pipeline(gen | sleep, n_threads=2, exec_name="ParallelExecutor", quiet=True)
+
+    with TqdmUpdate(desc="Progress") as pbar:
+        p.run(update_callback=pbar.update)
+
+
