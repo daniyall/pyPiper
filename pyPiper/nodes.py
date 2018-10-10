@@ -53,6 +53,7 @@ class Double(Node):
 class Sleep(Node):
     def run(self, data):
         time.sleep(random.randint(1,4))
+        # time.sleep(1)
         self.emit(data)
 
 class Half(Node):

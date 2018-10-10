@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 import json
 
-from pyPiper.executors import Executor, ParallelExecutor
+from pyPiper.executors import Executor, ParallelExecutor, ParallelExecutor2
 
 class Pipeline():
-    def __init__(self, graph, n_threads=1, quiet=False, **kwargs):
+    def __init__(self, graph, n_threads=1, quiet=False, exec_name="ParallelExecutor", **kwargs):
         if not isinstance(graph, NodeGraph):
             raise Exception("Graph must be a node graph. Got %s" % type(graph))
 
@@ -13,11 +13,16 @@ class Pipeline():
         if n_threads == 1:
             self._executor = Executor(graph, quiet,**kwargs)
         elif n_threads > 1:
-            self._executor = ParallelExecutor(graph, n_threads, quiet, **kwargs)
+            if exec_name.lower() == "parallelexecutor":
+                self._executor = ParallelExecutor(graph, n_threads, quiet, **kwargs)
+            elif exec_name.lower() == "parallelexecutor2":
+                self._executor = ParallelExecutor2(graph, n_threads, quiet, **kwargs)
+            else:
+                raise Exception("Unknown executor %s" % exec_name)
         else:
             raise Exception("n_threads must be >=1. Got %s" % n_threads)
 
-    def run(self, update_callback=None,):
+    def run(self, update_callback=None):
         self._executor.run(update_callback)
 
 
