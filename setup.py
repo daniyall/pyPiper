@@ -10,7 +10,7 @@ except ImportError:
 setup(
     name = 'pyPiper',
     packages = ['pyPiper'],
-    version = '0.5.1',
+    version = '0.5.2',
     description = 'A pipelining framework designed for data analysis but can be useful to other applications',
     author = 'daniyall',
     author_email = 'dev.daniyall@gmail.com',
