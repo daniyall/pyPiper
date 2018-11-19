@@ -4,7 +4,7 @@ import json
 from pyPiper.executors import Executor, ParallelExecutor, ParallelExecutor2
 
 class Pipeline():
-    def __init__(self, graph, n_threads=1, quiet=False, exec_name="ParallelExecutor", **kwargs):
+    def __init__(self, graph, n_threads=1, quiet=False, exec_name="ParallelExecutor2", **kwargs):
         if not isinstance(graph, NodeGraph):
             raise Exception("Graph must be a node graph. Got %s" % type(graph))
 
