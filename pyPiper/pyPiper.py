@@ -47,8 +47,8 @@ class Node(ABC):
         """
         :param name: Name of the node
         :type name: str
-        :param in_name: Name of the input stream this node should expect. If "*" is given, all inputs are accepted
-        :type in_name: str or list of str
+        :param in_streams: Name of the input streams this node should expect. If "*" is given, all inputs are accepted
+        :type in_streams: str or list of str
         :param out_streams: Name of the output streams
         :type out_streams: str or list of str
         :param kwargs: Extra arguments, can be used to specify stateless. All other arguments are passed to setup

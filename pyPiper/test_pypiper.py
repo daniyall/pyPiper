@@ -2,7 +2,7 @@ import unittest
 import sys
 
 from pyPiper import NodeGraph, Node, Pipeline
-from pyPiper.nodes import Generate, Double, Square, Printer, EvenOddGenerate, Sleep, TqdmUpdate
+from nodes import Generate, Double, Square, Printer, EvenOddGenerate, Sleep, TqdmUpdate
 
 
 def get_output():
@@ -388,16 +388,38 @@ class PyPiperTests(unittest.TestCase):
 
         self.assertCountEqual(output, expected_out)
 
+    def test_multiple_input_streams(self):
+        gen = EvenOddGenerate("gen", size=20, out_streams=["even", "odd"])
+
+        printer = Printer("p1", batch_size=1)
+
+        p = Pipeline(gen | printer, quiet=False)
+        p.run()
+
+        output = get_output()
+
+        expected_out = [str([x, x + 1]) for x in range(20)[::2]]
+
+        self.assertCountEqual(output, expected_out)
+
+    def test_split_multiple_input_streams(self):
+        gen = EvenOddGenerate("gen", size=20, out_streams=["even", "odd"])
+
+        printer = Printer("p1", in_streams=["even", "odd"], batch_size=1)
+
+        p = Pipeline(gen | printer, quiet=False)
+        p.run()
+        output = get_output()
+
+        expected_out = [str(x) for x in range(20)]
+
+        self.assertCountEqual(output, expected_out)
+
+
 if __name__ == '__main__':
-    # unittest.main(buffer=True)
+    unittest.main(buffer=True)
 
-    gen = Generate("gen", size=10)
-    double = Double("double")
-    square = Square("square")
-    sleep = Sleep("sleep")
-    p = Pipeline(gen | sleep, n_threads=2, exec_name="ParallelExecutor", quiet=True)
 
-    with TqdmUpdate(desc="Progress") as pbar:
-        p.run(update_callback=pbar.update)
+
 
 

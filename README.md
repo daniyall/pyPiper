@@ -95,6 +95,45 @@ EvenOddGenerate generates a pair of numbers. using the `out_streams` parameter, 
 number odd. When initializing the double and square nodes, we tell double to take the even number and square to take
 the odd number. 
 
+If multiple output streams are passed into a node, by default, they will be come into the node as a list. For example,
+
+```python
+gen = EvenOddGenerate("gen", size=10, out_streams=["even", "odd"])
+printer = Printer("p1", batch_size=1)
+
+p = Pipeline(gen | printer, quiet=False)
+p.run()
+``` 
+Will output
+
+```python
+[0,1],
+[2,3],
+...
+```
+
+However, if you can split the streams by specifying their names in the input streams `in_streams` parameter. So,
+ ```python
+gen = EvenOddGenerate("gen", size=20, out_streams=["even", "odd"])
+
+printer = Printer("p1", in_streams=["even", "odd"], batch_size=1)
+
+p = Pipeline(gen | printer, quiet=False)
+p.run()
+```
+
+Will generate:
+```python
+0,
+1,
+2,
+3,
+...
+```
+
+ 
+
+
 
 ## Progress updates
 When calling `pipeline.run()`, you can provide a callback function for progress updates. Whenever
