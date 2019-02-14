@@ -2,6 +2,16 @@ A parallel pipelining framework for Python. Developers can create nodes and chai
 
 Classes that extend ```Node``` must implement ```run``` method that will be called whenever new data is available.  
 
+## Table of Contents
+* [Installation](#installation)
+* [Example Usage](#example-usage)
+* [Parallel Execution](#parallel-execution)
+* [Stream Names](#stream-names)
+* [Progress Updates](#progress-updates)
+* [Projects Using PyPiper](#projects-using-pypiper)
+
+
+
 ## Installation
 
 ```bash
@@ -9,7 +19,7 @@ pip install pypiper
 ```
 
 
-## Example
+## Example Usage
 
 ```python
 from pyPiper import Node, Pipeline
@@ -135,7 +145,7 @@ Will generate:
 
 
 
-## Progress updates
+## Progress Updates
 When calling `pipeline.run()`, you can provide a callback function for progress updates. Whenever
 the pipelines makes progress, it calls this function with the number of items that have been processed
 so far and the total number of items that need to be processed. For example, if you were using a
@@ -160,3 +170,8 @@ if __name__ == '__main__':
     with TqdmUpdate(desc="Progress") as pbar:
         p.run(update_callback=pbar.update)
 ```
+
+
+## Projects Using PyPiper
+
+- [COVFEFE](https://github.com/SPOClab-ca/COVFEFE): A feature extraction tool focusing on lexical, syntactic and pragmatic features from text and audio features from audio.  
