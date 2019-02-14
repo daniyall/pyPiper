@@ -122,7 +122,7 @@ Will output
 ...
 ```
 
-However, if you can split the streams by specifying their names in the input streams `in_streams` parameter. So,
+However, you can split the streams by specifying their names in the input streams `in_streams` parameter. So,
  ```python
 gen = EvenOddGenerate("gen", size=20, out_streams=["even", "odd"])
 
